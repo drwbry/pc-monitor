@@ -14,6 +14,7 @@ public partial class CaptureDialog : Window
         InitializeComponent();
         _vm = new CaptureDialogViewModel(capture, kind);
         DataContext = _vm;
+        Closed += (_, _) => _vm.Dispose();
         Loaded += async (_, _) => await _vm.RunAsync();
     }
 

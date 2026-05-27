@@ -98,5 +98,8 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
         }
     }
 
+    partial void OnCaptureRunningChanged(bool value) =>
+        CaptureCommand.NotifyCanExecuteChanged();
+
     public void Dispose() => _timer.Stop();
 }

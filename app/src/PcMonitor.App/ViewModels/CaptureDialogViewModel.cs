@@ -7,7 +7,7 @@ using PcMonitor.Core.Models;
 
 namespace PcMonitor.App.ViewModels;
 
-public partial class CaptureDialogViewModel : ObservableObject
+public partial class CaptureDialogViewModel : ObservableObject, IDisposable
 {
     private readonly ICaptureService _capture;
     private readonly CaptureKind _kind;
@@ -43,6 +43,8 @@ public partial class CaptureDialogViewModel : ObservableObject
             },
             () => WindowsPath is not null);
     }
+
+    public void Dispose() => _cts.Dispose();
 
     public async Task RunAsync()
     {
