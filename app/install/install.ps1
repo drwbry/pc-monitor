@@ -1,19 +1,23 @@
 # Install Marsh PC Monitor for the current user.
 param(
-  [switch]$Publish
+  [switch]$Publish,
+  [string]$Configuration = "Release",
+  [switch]$FrameworkDependent
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $appName = "PcMonitor"
 $installDir = Join-Path $env:LOCALAPPDATA $appName
-$scriptsDest = Join-Path $env:USERPROFILE "Documents\SysLogs\scripts"
+$scriptsDest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "SysLogs\scripts"
 
 if ($Publish) {
-  & (Join-Path $PSScriptRoot "publish.ps1")
+  $publishArgs = @{ Configuration = $Configuration }
+  if ($FrameworkDependent) { $publishArgs['FrameworkDependent'] = $true }
+  & (Join-Path $PSScriptRoot "publish.ps1") @publishArgs
 }
 
-$publishDir = Join-Path $root "src/PcMonitor.App/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+$publishDir = Join-Path $root "src/PcMonitor.App/bin/$Configuration/net8.0-windows10.0.19041.0/win-x64/publish"
 $exe = Join-Path $publishDir "PcMonitor.exe"
 if (-not (Test-Path $exe)) {
   throw "PcMonitor.exe not found at $exe. Run install.ps1 -Publish first."
@@ -23,7 +27,7 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Copy-Item -Force $exe $installDir
 
 # Copy the companion scripts so the capture buttons work.
-$filesDir = Join-Path $root "../files"
+$filesDir = Join-Path (Split-Path -Parent $root) "files"
 New-Item -ItemType Directory -Force -Path $scriptsDest | Out-Null
 foreach ($name in @("diagnose.ps1", "live-probe.ps1", "collect-stats.ps1")) {
   $src = Join-Path $filesDir $name

@@ -15,4 +15,10 @@ This will:
 
 To rebuild and reinstall after code changes, re-run the same command.
 
-If you prefer a smaller framework-dependent build, add `-FrameworkDependent` to `publish.ps1`. You'll need the .NET 8 Desktop Runtime installed.
+If you prefer a smaller framework-dependent build, pass the flag through to `install.ps1`:
+
+```powershell
+.\app\install\install.ps1 -Publish -FrameworkDependent
+```
+
+You'll need the .NET 8 Desktop Runtime installed on the target machine.
