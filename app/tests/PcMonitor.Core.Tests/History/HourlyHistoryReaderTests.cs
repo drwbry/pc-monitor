@@ -76,9 +76,10 @@ public class HourlyHistoryReaderTests : IDisposable
     [Fact]
     public void AverageHourlyErrorCount_AveragesErrorTotals()
     {
+        var now = DateTimeOffset.UtcNow;
         for (var i = 0; i < 6; i++)
             File.WriteAllText(Path.Combine(_dir, $"stats_{i}.json"),
-                MakeJsonWithErrors($"2026-05-26T1{i}:00:00-04:00", 2, 1));
+                MakeJsonWithErrors(now.AddHours(-i).ToString("o"), 2, 1));
         var reader = new HourlyHistoryReader(_dir);
         reader.AverageHourlyErrorCount(hoursBack: 24).Should().Be(3.0);
     }
