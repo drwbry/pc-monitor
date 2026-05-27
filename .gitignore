@@ -1,0 +1,45 @@
+# ---- .NET / WPF build outputs ----
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+publish/
+*.user
+*.suo
+*.userprefs
+*.vsidx
+*.pdb
+*.dll
+*.exe
+!app/install/**/*.ps1
+
+# ---- IDEs ----
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# ---- NuGet ----
+packages/
+*.nupkg
+*.snupkg
+
+# ---- Test output ----
+TestResults/
+*.coverage
+*.coveragexml
+
+# ---- Logs ----
+*.log
+
+# ---- OS / shell cruft ----
+.DS_Store
+Thumbs.db
+
+# ---- Windows ADS markers that leak into WSL ----
+*:Zone.Identifier
+
+# ---- Local config / secrets ----
+*.local
+.env
+.env.*
