@@ -1,9 +1,20 @@
 {
-  "Timestamp": "2026-05-26T14:00:00-04:00",
-  "CpuPercent": 12.5,
-  "RamUsedGb": 14.2,
-  "RamTotalGb": 64.0,
-  "DriveCFreeGb": 412.0,
-  "SystemErrorsLastHour": 0,
-  "AppErrorsLastHour": 1
+  "schema_version": 2,
+  "timestamp": "2026-05-26T14:00:00-04:00",
+  "cpu_load_pct": 12.5,
+  "cpu_queue_length": 0,
+  "process_count": 120,
+  "ram": {
+    "total_gb": 64.0,
+    "free_gb": 49.8,
+    "used_pct": 22.2
+  },
+  "commit": { "limit_gb": 80.0, "used_gb": 25.0, "used_pct": 31.2 },
+  "pagefile": { "allocated_mb": 4096, "current_mb": 512, "peak_mb": 1024 },
+  "top_cpu_processes": [],
+  "disks": [
+    { "drive": "C", "used_gb": 100.0, "free_gb": 412.0, "used_pct": 20.0 }
+  ],
+  "system_errors_last_hour": 0,
+  "app_errors_last_hour": 1
 }
