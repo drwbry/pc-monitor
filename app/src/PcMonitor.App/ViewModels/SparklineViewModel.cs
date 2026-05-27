@@ -1,3 +1,4 @@
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PcMonitor.Core.History;
 
@@ -14,7 +15,7 @@ public partial class SparklineViewModel : ObservableObject
     public SparklineViewModel(IHistoryReader history)
     {
         _history = history;
-        _history.Changed += (_, _) => Refresh();
+        _history.Changed += (_, _) => Application.Current?.Dispatcher.BeginInvoke(Refresh);
         Refresh();
     }
 
