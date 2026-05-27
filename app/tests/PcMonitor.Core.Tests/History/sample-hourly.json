@@ -1,0 +1,9 @@
+{
+  "Timestamp": "2026-05-26T14:00:00-04:00",
+  "CpuPercent": 12.5,
+  "RamUsedGb": 14.2,
+  "RamTotalGb": 64.0,
+  "DriveCFreeGb": 412.0,
+  "SystemErrorsLastHour": 0,
+  "AppErrorsLastHour": 1
+}
