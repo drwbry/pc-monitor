@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Reflection;
 using System.Windows;
 using PcMonitor.App.ViewModels;
@@ -18,6 +19,25 @@ public partial class CockpitWindow : Window
         DataContext = vm;
         vm.CaptureRequested += (_, kind) => OpenCaptureDialog(kind, vm, svc);
         Closed += (_, _) => vm.Dispose();
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+            HideToTray();
+        base.OnStateChanged(e);
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        e.Cancel = true;
+        HideToTray();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        ShowInTaskbar = false;
     }
 
     private void OpenCaptureDialog(CaptureKind kind, CockpitViewModel vm, Composition.Services svc)
