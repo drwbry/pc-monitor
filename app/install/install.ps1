@@ -2,7 +2,8 @@
 param(
   [switch]$Publish,
   [string]$Configuration = "Release",
-  [switch]$FrameworkDependent
+  [switch]$FrameworkDependent,
+  [switch]$RegisterStartupTask
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,5 +48,18 @@ $sc.Save()
 Write-Host "Installed:  $installDir\PcMonitor.exe"
 Write-Host "Shortcut:   $shortcut"
 Write-Host "Scripts:    $scriptsDest"
+
+if ($RegisterStartupTask) {
+  $taskName = "Marsh PC Monitor"
+  $action   = New-ScheduledTaskAction -Execute (Join-Path $installDir "PcMonitor.exe")
+  $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest -LogonType Interactive
+  $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 `
+                 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+    -Principal $principal -Settings $settings -Force | Out-Null
+  Write-Host "Startup task: '$taskName' registered (runs elevated at login, no UAC prompt)"
+}
+
 Write-Host ""
 Write-Host "Launch from Start Menu, or run: $installDir\PcMonitor.exe"
