@@ -15,7 +15,7 @@ public sealed class SystemProcessEnumerator : IProcessEnumerator
                 TimeSpan cpu;
                 try { cpu = p.TotalProcessorTime; }
                 catch { cpu = TimeSpan.Zero; }
-                list.Add(new RawProcess(p.Id, p.ProcessName, cpu, p.PrivateMemorySize64));
+                list.Add(new RawProcess(p.Id, p.ProcessName, cpu, p.WorkingSet64));
             }
             catch
             {
