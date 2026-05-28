@@ -62,9 +62,13 @@ public sealed class SensorService : ISensorService
             _computer = null;
         }
 
-        // If LHM didn't find a readable package sensor, check whether the ACPI fallback works.
+        // If LHM didn't find a readable package sensor, check whether the ACPI/counter fallback works.
         if (!TempSensorsAvailable)
-            TempSensorsAvailable = ReadAcpiCpuTemp() is not null;
+        {
+            if (logPath is not null)
+                File.AppendAllText(logPath, "  LHM temps unavailable, probing fallbacks:\n");
+            TempSensorsAvailable = ReadAcpiCpuTemp(logPath) is not null;
+        }
 
         try { _cpuTotal = new PerformanceCounter("Processor", "% Processor Time", "_Total"); _cpuTotal.NextValue(); } catch { _cpuTotal = null; }
         try { _diskQueue = new PerformanceCounter("PhysicalDisk", "Current Disk Queue Length", "_Total"); _diskQueue.NextValue(); } catch { _diskQueue = null; }
@@ -103,7 +107,7 @@ public sealed class SensorService : ISensorService
         catch { }
 
         // LHM may find sensor slots but return null values (ring 0 driver blocked by Secure Boot).
-        // Fall back to ACPI thermal zones via WMI, which needs no kernel driver.
+        // Fall back to ACPI thermal zones / performance counters.
         if (tempC is null)
             tempC = ReadAcpiCpuTemp();
 
@@ -177,22 +181,57 @@ public sealed class SensorService : ISensorService
         return (ramUsed, ramTotal, freePhysPct, commitPct, pagefilePct, driveCFree);
     }
 
-    private static double? ReadAcpiCpuTemp()
+    private static double? ReadAcpiCpuTemp(string? logPath = null)
     {
+        // Try 1: ACPI thermal zones via WMI
         try
         {
             using var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT * FROM MSAcpi_ThermalZoneTemperature");
             double? maxTemp = null;
+            var count = 0;
             foreach (ManagementObject m in searcher.Get())
             {
+                count++;
                 var tenthsKelvin = Convert.ToDouble(m["CurrentTemperature"]);
                 var tempC = tenthsKelvin / 10.0 - 273.15;
+                if (logPath is not null)
+                    File.AppendAllText(logPath, $"  ACPI zone: {m["InstanceName"]} = {tempC:F1}°C\n");
+                if (tempC is > 0 and < 150)
+                    maxTemp = maxTemp is null ? tempC : Math.Max(maxTemp.Value, tempC);
+            }
+            if (logPath is not null && count == 0)
+                File.AppendAllText(logPath, "  ACPI: no thermal zone instances found\n");
+            if (maxTemp is not null) return maxTemp;
+        }
+        catch (Exception ex)
+        {
+            if (logPath is not null)
+                File.AppendAllText(logPath, $"  ACPI WMI failed: {ex.Message}\n");
+        }
+
+        // Try 2: Windows Thermal Zone performance counters (no driver needed)
+        try
+        {
+            var category = new System.Diagnostics.PerformanceCounterCategory("Thermal Zone Information");
+            double? maxTemp = null;
+            foreach (var instance in category.GetInstanceNames())
+            {
+                using var counter = new PerformanceCounter("Thermal Zone Information", "Temperature", instance);
+                var tenthsKelvin = counter.NextValue();
+                var tempC = tenthsKelvin / 10.0 - 273.15;
+                if (logPath is not null)
+                    File.AppendAllText(logPath, $"  ThermalZone counter: {instance} = {tempC:F1}°C\n");
                 if (tempC is > 0 and < 150)
                     maxTemp = maxTemp is null ? tempC : Math.Max(maxTemp.Value, tempC);
             }
             return maxTemp;
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            if (logPath is not null)
+                File.AppendAllText(logPath, $"  ThermalZone counter failed: {ex.Message}\n");
+            return null;
+        }
     }
 
     public void Dispose()
