@@ -12,7 +12,7 @@ public sealed class SystemProcessEnumerator : IProcessEnumerator
         {
             try
             {
-                list.Add(new RawProcess(p.Id, p.ProcessName, p.TotalProcessorTime, p.WorkingSet64));
+                list.Add(new RawProcess(p.Id, p.ProcessName, p.TotalProcessorTime, p.PrivateMemorySize64));
             }
             catch
             {

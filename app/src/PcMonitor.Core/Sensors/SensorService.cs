@@ -17,7 +17,7 @@ public sealed class SensorService : ISensorService
 
     public bool TempSensorsAvailable { get; }
 
-    public SensorService(IHistoryReader history)
+    public SensorService(IHistoryReader history, string? logPath = null)
     {
         _history = history;
         try
@@ -29,7 +29,33 @@ public sealed class SensorService : ISensorService
                 IsStorageEnabled = true,
             };
             _computer.Open();
-            TempSensorsAvailable = true;
+            var cpuPackageFound = false;
+            if (logPath is not null)
+            {
+                try
+                {
+                    var lines = new System.Text.StringBuilder();
+                    lines.AppendLine($"=== LHM sensors @ {DateTimeOffset.Now:o} ===");
+                    foreach (var hw in _computer.Hardware)
+                    {
+                        hw.Update();
+                        lines.AppendLine($"  HW: {hw.HardwareType} | {hw.Name}");
+                        foreach (var s in hw.Sensors)
+                            lines.AppendLine($"    [{s.SensorType}] {s.Name} = {s.Value}");
+                    }
+                    File.AppendAllText(logPath, lines.ToString());
+                }
+                catch { }
+            }
+            foreach (var hw in _computer.Hardware)
+            {
+                if (hw.HardwareType != HardwareType.Cpu) continue;
+                hw.Update();
+                if (hw.Sensors.Any(s => s.SensorType == SensorType.Temperature &&
+                    s.Name.Contains("Package", StringComparison.OrdinalIgnoreCase)))
+                    cpuPackageFound = true;
+            }
+            TempSensorsAvailable = cpuPackageFound;
         }
         catch
         {
@@ -79,7 +105,7 @@ public sealed class SensorService : ISensorService
         try { diskQ = _diskQueue?.NextValue(); } catch { }
 
         _events.RefreshIfDue(now);
-        var procs = _processes.Sample(now).OrderByDescending(p => p.CpuPercent).Take(10).ToList();
+        var procs = _processes.Sample(now).Take(10).ToList();
         var avg24h = _history.AverageHourlyErrorCount();
 
         return new SensorSnapshot(

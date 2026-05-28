@@ -18,7 +18,7 @@ public sealed class Services : IDisposable
     {
         Directory.CreateDirectory(Paths.AppDataFolder);
         History = new HourlyHistoryReader(Paths.HourlyFolder, watch: true);
-        Sensors = new SensorService(History);
+        Sensors = new SensorService(History, Paths.LogFile);
         Issues = new IssueEvaluator(new IIssueRule[]
         {
             new ThermalThrottleRule(),

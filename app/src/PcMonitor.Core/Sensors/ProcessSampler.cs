@@ -53,7 +53,7 @@ public sealed class ProcessSampler
             .Select(g => new ProcessSample(0, g.Key,
                 Math.Min(100.0, g.Sum(p => p.CpuPercent)),
                 g.Sum(p => p.RamMb)))
-            .OrderByDescending(p => p.CpuPercent)
+            .OrderByDescending(p => p.RamMb)
             .ToList();
     }
 }
