@@ -12,7 +12,8 @@
     <!-- Header -->
     <Border DockPanel.Dock="Top" Padding="0,0,0,12">
       <StackPanel Orientation="Horizontal">
-        <TextBlock Text="Marsh PC Monitor" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=Title}"
+                   FontSize="20" FontWeight="SemiBold"/>
         <Ellipse Width="14" Height="14" Margin="20,5,8,0" Fill="{Binding HealthBrush}"/>
         <TextBlock Text="{Binding HealthLabel}" FontSize="16" VerticalAlignment="Center"/>
       </StackPanel>

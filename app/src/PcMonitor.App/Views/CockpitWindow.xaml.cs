@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using PcMonitor.App.ViewModels;
 using PcMonitor.App.Views.Dialogs;
@@ -10,6 +11,8 @@ public partial class CockpitWindow : Window
     public CockpitWindow()
     {
         InitializeComponent();
+        var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "?";
+        Title = $"Marsh PC Monitor v{version}";
         var svc = ((App)Application.Current).Services!;
         var vm = new CockpitViewModel(svc);
         DataContext = vm;
