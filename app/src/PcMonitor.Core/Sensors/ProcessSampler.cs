@@ -37,6 +37,7 @@ public sealed class ProcessSampler
         var results = new List<ProcessSample>(current.Count);
         foreach (var (pid, proc) in current)
         {
+            if (pid is 0 or 4) continue; // Idle and System pseudo-processes
             if (!_previous.TryGetValue(pid, out var prev)) continue;
             var cpuSeconds = (proc.TotalProcessorTime - prev.TotalProcessorTime).TotalSeconds;
             var pct = (cpuSeconds / deltaSeconds) / _logicalCores * 100.0;
