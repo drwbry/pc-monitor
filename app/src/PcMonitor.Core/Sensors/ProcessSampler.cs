@@ -47,6 +47,13 @@ public sealed class ProcessSampler
 
         _previous = current;
         _lastSampleAt = now;
-        return results;
+
+        return results
+            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ProcessSample(0, g.Key,
+                Math.Min(100.0, g.Sum(p => p.CpuPercent)),
+                g.Sum(p => p.RamMb)))
+            .OrderByDescending(p => p.CpuPercent)
+            .ToList();
     }
 }

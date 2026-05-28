@@ -58,7 +58,7 @@ public class ProcessSamplerTests
         sampler.Sample(t0);
         stub.Next = new[] { new RawProcess(1, "p1", TimeSpan.FromSeconds(11), 0) };
         var res = sampler.Sample(t0.AddSeconds(1));
-        res.Select(p => p.ProcessId).Should().BeEquivalentTo(new[] { 1 });
+        res.Select(p => p.Name).Should().BeEquivalentTo(new[] { "p1" });
     }
 
     [Fact]
