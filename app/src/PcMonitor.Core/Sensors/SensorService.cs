@@ -60,8 +60,11 @@ public sealed class SensorService : ISensorService
         catch
         {
             _computer = null;
-            TempSensorsAvailable = false;
         }
+
+        // If LHM didn't find a readable package sensor, check whether the ACPI fallback works.
+        if (!TempSensorsAvailable)
+            TempSensorsAvailable = ReadAcpiCpuTemp() is not null;
 
         try { _cpuTotal = new PerformanceCounter("Processor", "% Processor Time", "_Total"); _cpuTotal.NextValue(); } catch { _cpuTotal = null; }
         try { _diskQueue = new PerformanceCounter("PhysicalDisk", "Current Disk Queue Length", "_Total"); _diskQueue.NextValue(); } catch { _diskQueue = null; }
@@ -98,6 +101,12 @@ public sealed class SensorService : ISensorService
             }
         }
         catch { }
+
+        // LHM may find sensor slots but return null values (ring 0 driver blocked by Secure Boot).
+        // Fall back to ACPI thermal zones via WMI, which needs no kernel driver.
+        if (tempC is null)
+            tempC = ReadAcpiCpuTemp();
+
         if (tempC is double t && throttling is null) throttling = t >= 99;
 
         var (ramUsed, ramTotal, freePhysPct, commitPct, pagefilePct, driveCFree) = ReadMemoryAndDisk();
@@ -166,6 +175,24 @@ public sealed class SensorService : ISensorService
         catch { }
 
         return (ramUsed, ramTotal, freePhysPct, commitPct, pagefilePct, driveCFree);
+    }
+
+    private static double? ReadAcpiCpuTemp()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT * FROM MSAcpi_ThermalZoneTemperature");
+            double? maxTemp = null;
+            foreach (ManagementObject m in searcher.Get())
+            {
+                var tenthsKelvin = Convert.ToDouble(m["CurrentTemperature"]);
+                var tempC = tenthsKelvin / 10.0 - 273.15;
+                if (tempC is > 0 and < 150)
+                    maxTemp = maxTemp is null ? tempC : Math.Max(maxTemp.Value, tempC);
+            }
+            return maxTemp;
+        }
+        catch { return null; }
     }
 
     public void Dispose()
