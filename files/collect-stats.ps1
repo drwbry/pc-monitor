@@ -6,6 +6,10 @@
 # Schema v2: adds commit charge (the metric that actually predicts
 # "feels sluggish"), page file usage, CPU scheduling queue length,
 # and total process count.
+#
+# Schema v3: adds cpu_perf (% Processor Performance avg/max over ~5s + reported
+# frequency) - a driver-free signal that confirms CPU clamping below base clock
+# (e.g. BD PROCHOT), which load/RAM metrics cannot see.
 
 $OutputDir = "$env:USERPROFILE\Documents\SysLogs\hourly"
 $Timestamp  = Get-Date -Format "yyyy-MM-dd_HH-mm"
@@ -35,6 +39,18 @@ try {
     $cpuQueue = $null
 }
 
+# CPU delivered performance vs base clock (driver-free throttle signal).
+# % Processor Performance >100 = boosting above base; ~66 = clamped to ~1.6GHz.
+# Sample ~5s and keep the MAX to tell a real clamp from ordinary idle downclock.
+try {
+    $perfSamples = (Get-Counter '\Processor Information(_Total)\% Processor Performance' -SampleInterval 1 -MaxSamples 5 -ErrorAction Stop).CounterSamples | ForEach-Object { $_.CookedValue }
+    $perfAvg = [math]::Round((($perfSamples | Measure-Object -Average).Average), 0)
+    $perfMax = [math]::Round((($perfSamples | Measure-Object -Maximum).Maximum), 0)
+    $perfFreq = [math]::Round((Get-Counter '\Processor Information(_Total)\Processor Frequency' -MaxSamples 1 -ErrorAction Stop).CounterSamples[0].CookedValue, 0)
+} catch {
+    $perfAvg = $null; $perfMax = $null; $perfFreq = $null
+}
+
 # Page file usage.
 $pf = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($pf) {
@@ -49,10 +65,15 @@ if ($pf) {
 $procs = Get-Process
 
 $stats = [ordered]@{
-    schema_version   = 2
+    schema_version   = 3
     timestamp        = $Timestamp
     cpu_load_pct     = [math]::Round($cpuLoad, 1)
     cpu_queue_length = $cpuQueue
+    cpu_perf = [ordered]@{
+        proc_performance_pct_avg = $perfAvg
+        proc_performance_pct_max = $perfMax
+        frequency_mhz            = $perfFreq
+    }
     process_count    = $procs.Count
     ram = [ordered]@{
         total_gb  = [math]::Round($ramTotal / 1MB, 2)

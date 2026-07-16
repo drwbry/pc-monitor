@@ -43,7 +43,16 @@ public static class HourlyJsonParser
             var sysErr = GetInt(root, "system_errors_last_hour");
             var appErr = GetInt(root, "app_errors_last_hour");
 
-            return new HourlyEntry(ts.Value, cpuPct, ramUsed, ramTotal, driveCFree, sysErr, appErr);
+            double? procPerfAvg = null, procPerfMax = null, freqMhz = null;
+            if (root.TryGetProperty("cpu_perf", out var cpuPerf))
+            {
+                procPerfAvg = GetDouble(cpuPerf, "proc_performance_pct_avg");
+                procPerfMax = GetDouble(cpuPerf, "proc_performance_pct_max");
+                freqMhz = GetDouble(cpuPerf, "frequency_mhz");
+            }
+
+            return new HourlyEntry(ts.Value, cpuPct, ramUsed, ramTotal, driveCFree, sysErr, appErr,
+                procPerfAvg, procPerfMax, freqMhz);
         }
         catch (JsonException)
         {

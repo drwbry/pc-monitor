@@ -20,6 +20,37 @@ public class HourlyJsonParserTests
         }
         """;
 
+    private const string V3Json = """
+        {
+          "schema_version": 3,
+          "timestamp": "2026-07-15T21:00:00-04:00",
+          "cpu_load_pct": 13.0,
+          "cpu_queue_length": 28,
+          "cpu_perf": { "proc_performance_pct_avg": 66.0, "proc_performance_pct_max": 68.0, "frequency_mhz": 1594.0 },
+          "ram": { "total_gb": 31.71, "free_gb": 9.35, "used_pct": 70.5 }
+        }
+        """;
+
+    [Fact]
+    public void Parse_V3WithCpuPerf_PopulatesThrottleFields()
+    {
+        var entry = HourlyJsonParser.Parse(V3Json);
+        entry.Should().NotBeNull();
+        entry!.CpuProcPerfPctAvg.Should().Be(66.0);
+        entry.CpuProcPerfPctMax.Should().Be(68.0);
+        entry.CpuFrequencyMhz.Should().Be(1594.0);
+    }
+
+    [Fact]
+    public void Parse_V2WithoutCpuPerf_ThrottleFieldsNull()
+    {
+        var entry = HourlyJsonParser.Parse(ValidJson);
+        entry.Should().NotBeNull();
+        entry!.CpuProcPerfPctAvg.Should().BeNull();
+        entry.CpuProcPerfPctMax.Should().BeNull();
+        entry.CpuFrequencyMhz.Should().BeNull();
+    }
+
     [Fact]
     public void Parse_ValidPayload_ReturnsEntry()
     {

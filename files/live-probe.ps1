@@ -48,6 +48,18 @@ Threshold (2 x logical cores)  : $threshold
 Interpretation                 : queue > threshold means threads are waiting for CPU even though no single process looks hot
 "@)
 
+# 2b. CPU delivered performance vs base clock (driver-free throttle signal)
+$perfSamples = (Get-Counter '\Processor Information(_Total)\% Processor Performance' -SampleInterval 1 -MaxSamples 5).CounterSamples | ForEach-Object { $_.CookedValue }
+$perfAvg = [math]::Round((($perfSamples | Measure-Object -Average).Average), 0)
+$perfMax = [math]::Round((($perfSamples | Measure-Object -Maximum).Maximum), 0)
+$perfFreq = [math]::Round((Get-Counter '\Processor Information(_Total)\Processor Frequency' -MaxSamples 1).CounterSamples[0].CookedValue, 0)
+Section "CPU DELIVERED PERFORMANCE (vs base clock)" (@"
+% Processor Performance avg : $perfAvg
+% Processor Performance max : $perfMax
+Reported frequency (MHz)    : $perfFreq
+Interpretation              : >100 = boosting above base (healthy). Max well below ~100 while the queue is high = CPU clamped below base clock (e.g. BD PROCHOT throttle).
+"@)
+
 # 3. Disk queue length and idle time on physical disks
 $disk = Get-Counter '\PhysicalDisk(*)\Avg. Disk Queue Length','\PhysicalDisk(*)\% Idle Time' -SampleInterval 1 -MaxSamples 3
 $diskAgg = @{}

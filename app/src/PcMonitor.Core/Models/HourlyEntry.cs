@@ -7,4 +7,7 @@ public sealed record HourlyEntry(
     double? RamTotalGb,
     double? DriveCFreeGb,
     int? SystemErrorsLastHour,
-    int? AppErrorsLastHour);
+    int? AppErrorsLastHour,
+    double? CpuProcPerfPctAvg = null,
+    double? CpuProcPerfPctMax = null,
+    double? CpuFrequencyMhz = null);
