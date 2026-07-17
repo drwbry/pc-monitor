@@ -484,11 +484,9 @@ log (MULTI/TEMP/VID/POWER). Baseline, one thread, 7–10% C0%:
 
 **Only the binary turbo switch does anything.** Every partial-ceiling lever is ignored.
 
-**⚠ THIS RESULT IS NOT TRUSTWORTHY YET — uncontrolled confound.** *Every* test above ran
-with **ThrottleStop open with `Speed Shift EPP` checked**, meaning TS was continuously
-writing `IA32_HWP_REQUEST` on its own timer. Two controllers were fighting for the same
-register in every measurement. That plausibly explains the single most anomalous result —
-Windows' *own* `PROCTHROTTLEMAX` being inert on a machine Windows should own.
+**⚠ The above was initially confounded** — every test ran with ThrottleStop open writing
+`IA32_HWP_REQUEST`. **That confound has since been eliminated; see 2f. The conclusion
+SURVIVED.**
 
 **Also flawed: the stimulus.** A sustained 100%-pinned single thread *legitimately earns*
 max single-core boost — that is correct silicon behaviour, not the bug. EPP and boost-mode
@@ -497,25 +495,58 @@ null results are **false negatives**. Three windows were additionally contaminat
 background load (72–97 W means for a single-thread burst), so fine deltas (53.9 vs 50.7 vs
 50.2) are **inside the noise and must not be ranked**.
 
-**Next: the discriminating experiment.** Close ThrottleStop **entirely**, then retest
-`PROCTHROTTLEMAX=50%`, measuring with `\Processor Information(*)\% Processor Performance`
-(Secure Boot blocks LHM/MSR reads, so no temp/VID without TS; validated: reads 233% ≈
-5.1 GHz with TS running, consistent with TS's own MULTI).
-
-- Frequency **drops** (~2.7–3.5 GHz) → TS was stomping Windows. Machine **is** tunable;
-  the fix is "let one owner set the cap."
-- Frequency **stays ~5.2 GHz** → Lenovo DTT/EC genuinely owns HWP. Conclusion is real.
-
 **Do NOT bother testing TS `Set Multiplier`.** Legacy ratio request (`IA32_PERF_CTL`) is
 not the operative control path when Speed Shift/HWP is active — with HWP the only knobs are
 `IA32_HWP_REQUEST` min/max/desired/EPP. It would likely be firmware-locked anyway.
 
-**Correct EPP test (not yet run):** a **natural-use A/B**, not a burst. The 621-sample
-real-use log *is* the EPP=32 baseline; collect ~10 min of ordinary use at EPP=128 and
-compare the MULTI/TEMP distribution **at low C0%**.
-
 **Fan lever: dead.** See 2c — the test already ran in Performance/red, Lenovo's most
 aggressive curve.
+
+### 2f. CONFOUND ELIMINATED — ThrottleStop fully closed. **Conclusion CONFIRMED.**
+
+Ran 2026-07-17 with **ThrottleStop not running at all** (verified via `Get-Process`), so
+nothing but Windows was writing `IA32_HWP_REQUEST`. Instrument:
+`\Processor Information(*)\% Processor Performance`, max across core instances (validated
+at 233% ≈ 5.1 GHz against TS's own MULTI while TS was still up).
+
+| Config (TS CLOSED) | Result | Verdict |
+|---|---|---|
+| `PROCTHROTTLEMAX` = 100% | 254% ≈ **5581 MHz** | baseline |
+| `PROCTHROTTLEMAX` = **50%** | 257% ≈ **5645 MHz** | **NO-OP** (would be ~2.7 GHz if honored) |
+| `PERFEPP` = 50% | 254% ≈ **5579 MHz** | no effect |
+| `PERFEPP` = 75% | 261% ≈ **5744 MHz** | no effect |
+| `PERFEPP` = **100%** (max efficiency) | 257% ≈ **5664 MHz** | **no effect** |
+| **`PERFBOOSTMODE` = 0** | 99% ≈ **2179 MHz** | **WORKS** ← control proves OS *does* have grip |
+| restored (mode 5 / max 100) | 255% ≈ **5619 MHz** | turbo back |
+
+**ThrottleStop was NOT the confound.** The conclusion survives the test that could have
+killed it:
+
+1. **`PROCTHROTTLEMAX` is simply a NO-OP on this machine** — not "overridden by TS". This
+   matches Codex's alternative reading: it is a legacy P-state knob that modern Windows
+   ignores under autonomous HWP. Stop reaching for it.
+2. **EPP does not cap sustained frequency** — even EPP 100% boosts to 5.66 GHz. Confirms
+   both reviewers: a pinned thread *legitimately earns* max boost; EPP governs the
+   **bursty** response only.
+3. **`PERFBOOSTMODE=0` works** (2179 MHz) — so the OS is not locked out; there is simply
+   **no partial dial**, only an on/off switch.
+
+**FINAL: this machine has NO usable partial frequency cap.** Turbo on (~5.6 GHz, ~1.45 V)
+or turbo off (~2.2 GHz, ~0.85 V, 63 °C). Nothing in between. Combined with 2e (a ~5.0 GHz
+cap would save no voltage anyway), the two-profile plan is the answer, not a tuned ceiling.
+
+**Still genuinely open — the bursty-load question.** Every test above used a *sustained*
+stimulus, which cannot measure the user's actual complaint (5.4 GHz to open Steam at
+7–14% C0%). EPP remains plausible **for bursty work only**. The correct test is a
+**natural-use A/B**: the 621-sample real-use log **is** the EPP=32 baseline — collect
+~10 min of ordinary use at EPP=128 and compare the MULTI/TEMP distribution **at low C0%**.
+Do not use a burst for this.
+
+**Windows power-plan state after testing: fully restored** — `PERFBOOSTMODE` AC=5,
+`PROCTHROTTLEMAX` AC=100, `PERFEPP` AC=33 (Windows' Balanced default; originally there was
+no explicit override, which resolved to the same 33). DC values never touched.
+*Gotcha for next time:* `Remove-Item` on power registry keys fails without elevation and
+PowerShell continues past it — **verify restores by reading back, not by trusting output.**
 
 ### 2e. Physics constraint on any future ceiling
 
