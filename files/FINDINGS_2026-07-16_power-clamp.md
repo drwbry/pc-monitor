@@ -1,8 +1,79 @@
 # Root cause: ThrottleStop LOCKS the MSR power-limit register at the Battery profile's values
 
+---
+
+# READ FIRST — note for an independent reviewer
+
+This document mixes **measurements** with **our interpretations**. The interpretations are
+argued at times forcefully; they are **not** established fact and should not anchor a fresh
+analysis. If you are reviewing this independently, the honest split is below. Prefer the
+raw logs over any prose here.
+
+## What is MEASURED (trust this)
+
+| # | Fact | Source |
+|---|---|---|
+| M1 | Before fix: package power pinned 15.556 / 17.257 / 19.172 W (min/mean/max), `IA: RAPL/PBM PL1` = Yes **304/304**, `PL1 Static`=17, `PL2 Static`=20 | `hwinfo_log_07162026.CSV`, 304 rows |
+| M2 | At replug 22:57:14→:16: `Charge Rate` −44 W → 0.000; `PL1 Dynamic` 17→70; `PL2 Dynamic` 20→90; package 8.971 W → 33.276 W | `hwinfo_log_07162026_v2.CSV` rows 30–31 |
+| M3 | After fix: package peaks **92.699 W** (row 77, 22:58:48) while `PL1 Static` still reads **17** | `hwinfo_log_07162026_v2.CSV` |
+| M4 | After fix: `IA: RAPL/PBM PL1` = Yes **12/100 (12.0%)**; `Core Thermal Throttling` = Yes **41/100 (41.0%)** | `hwinfo_log_07162026_v2.CSV` (100 data rows) |
+| M5 | TS log: 621 data rows; TEMP max **100 °C**, ≥95 °C in **63/621**, ≥99 °C in **16/621**; VID max **1.5042 V**, >1.3 V in **385/621**; C0% mean **10.437%**; MULTI max **53.87**; POWER max 108.3 W | `throttlestop-2026-07-16.txt` |
+| M6 | Of the 16 samples at TEMP ≥99 °C: **11 are at ≥60 W** (max 93.1 W), **5 are at <60 W** (min 40.9 W) | same; full table in "Third finding" |
+| M7 | Fans: 1400 RPM floor pre-replug (on battery/Quiet); reached 4200 RPM at 22:58:40; at 4200 RPM, 71 W → 85–89 °C; 86 W → 100 °C | `hwinfo_log_07162026_v2.CSV` cols 667–668 |
+| M8 | With **ThrottleStop closed**: `PROCTHROTTLEMAX` 100%→5581 MHz, **50%→5645 MHz**; `PERFEPP` 50/75/100% → 5579/5744/5664 MHz; **`PERFBOOSTMODE`=0 → 2179 MHz**; restored → 5619 MHz | live test 2026-07-17, `% Processor Performance` |
+| M9 | With TS **open**: TS `Speed Shift Max`=50, `PROCTHROTTLEMAX` 80/50%, `PERFBOOSTMODE` 1/3/4, TS EPP 32→128 all left peak multi at 52.7–55.7 | live test, TS 1 Hz log |
+
+## What is INFERRED (do not treat as fact)
+
+| # | Claim | Basis | Gap |
+|---|---|---|---|
+| I1 | The mechanism was ThrottleStop's `Lock` latching MSR 0x610 at Battery's 17/20/**12** | TPL screenshot showing MSR 17/20/12 + padlock, under **both** profiles | Screenshot, not a register dump. The CSVs prove the *effective* limit moved, not MSR 0x610 directly. |
+| I2 | HWiNFO `PL1 Power Limit (Static)` is stale/cached | It reads 17 W while the package draws 92.7 W (M3) — impossible under a real 17 W PL1 | Field semantics not confirmed from HWiNFO source/docs by us directly |
+| **I3** | **Undervolting is firmware-locked** | TS FIVR shows "Locked" group box, greyed `Unlock Adjustable Voltage`, padlocked Turbo Overclocking; VID max 1.5042 V looks like a stock curve | **NEVER MEASURED. See "Second finding" — a decisive A/B is proposed but NOT run. Treat as OPEN.** |
+| I4 | Repaste not warranted | 71 W → 85–89 °C at 4200 RPM is normal for a 14900HX | 76–86 W at 4200 RPM still hits 100 °C. **Genuinely unresolved.** |
+| I5 | Low-power 100 °C events are single-core power-density spikes | multi 43–51 at C0% 7–11%, package temp = hottest core | Physically reasonable, not independently verified |
+
+## What was NOT tested
+
+- **The undervolt A/B (I3).** The single most load-bearing untested item. Method in "Second finding".
+- **Bursty-load response.** Every tuning test used a *sustained* pinned thread, which cannot
+  measure the actual complaint (5.4 GHz to open Steam at 7–14% C0%). A pinned thread
+  legitimately earns max boost. EPP/boost-mode nulls are therefore **false negatives**.
+- **Steady-state cooling.** No fans-pinned, load-to-equilibrium reading at a known wattage
+  exists — which is exactly what would settle I4.
+- TS `Set Multiplier` (deliberately skipped — legacy `IA32_PERF_CTL` is not the operative
+  path under HWP).
+
+## Known data quality issues
+
+- The v2 CSV has **100** data rows plus a repeated trailing header. An earlier revision of
+  this doc said 101 and reported 11.9%; the correct figure is **12/100 = 12.0%**.
+- **Three tuning windows were contaminated** by background load (72–97 W means for a
+  *single-thread* burst; C0% 12–23% vs 7–10% baseline). Fine deltas between near-ties
+  (mean multi 53.9 vs 50.7 vs 50.2) are **inside the noise — do not rank them.**
+- An earlier revision claimed "**every** 100 °C event is high-multi/low-load". **False —
+  selection bias** (see M6). Corrected 2026-07-17 after Codex adversarial review.
+
+## Reproduction environment
+
+- Analysis host is **WSL**; the machine under test is the Windows side. PowerShell invoked
+  as `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` (non-elevated).
+- **Secure Boot blocks LHM/direct MSR reads** → no temp/VID available without ThrottleStop.
+  The only TS-independent instrument is `\Processor Information(*)\% Processor Performance`
+  (base 2200 MHz; validated at 233% ≈ 5.1 GHz against TS's own MULTI).
+- Screenshots are **embedded in `unplug_plug.docx`** — extract via
+  `python3 -c "import zipfile; zipfile.ZipFile('unplug_plug.docx').extract('word/media/image1.png')"`
+  (image1 = before unplug, image2 = unplugged, image3 = ~20 s after replug).
+- Windows power scheme GUID `381b4222-f694-41f0-9685-ff5bb260df2e` (Balanced);
+  SUB_PROCESSOR `54533251-82be-4824-96c1-47b60b740d00`; PERFBOOSTMODE
+  `be337238-0d82-4146-a960-4f3749d470c7`; PROCTHROTTLEMAX
+  `bc5038f7-23e0-4960-96da-33abaf5935ec`; PERFEPP `36687f9e-e3a5-4dbf-b1dc-15eb381c6863`.
+
+---
+
 **Date:** 2026-07-16 (episode ~21:26 EDT, analysis ~21:50–22:30; **fix verified ~22:52–23:03**)
 **Status:** Root cause CONFIRMED. **Fix APPLIED and VERIFIED** — the unplug/replug cycle no longer latches the clamp. See "Fix verified" below.
-**New binding constraint:** heat. With the clamp gone the CPU boosts freely, and with the undervolt firmware-locked it reaches 100 °C — via **two** mechanisms (11/16 hot samples at 60–93 W, 5/16 as single-core spikes at 40–55 W). See "Third finding".
+**New binding constraint:** heat. With the clamp gone the CPU boosts freely and reaches 100 °C — via **two** mechanisms (11/16 hot samples at 60–93 W, 5/16 as single-core spikes at 40–55 W). See "Third finding". *(Whether the undervolt is applying is **inference I3, not measured** — see "READ FIRST" and "Second finding".)*
 **Corrected 2026-07-17** after Codex adversarial review: an earlier claim that *every* 100 °C event was low-power/high-multi was **false selection bias**, and the "repaste ruled out" conclusion that rested on it is **withdrawn** (now: not indicated, not proven unnecessary). Live tuning (5 levers) is **inconclusive** — confounded by ThrottleStop being open. See 2b.
 **Evidence:** `hwinfo_log_07162026.CSV` (21:25:05 → 21:35:14, 304 rows @ ~2s), `hwinfo_log_07162026_v2.CSV` (22:56:16 → 22:59:34, 100 rows @ ~2s, spans the replug), `throttlestop-2026-07-16.txt` (22:52:39 → 23:02:59, 621 rows @ 1s), `unplug_plug.docx` (3 TPL/TS screenshots + timeline), `ThrottleStop.ini`, live load test, FIVR screenshot, BIOS/microcode query.
 
@@ -260,10 +331,12 @@ All 16 samples at TEMP ≥ 99 °C, sorted by package power:
    temperature reports the **hottest core** while package *power* is a die-wide average.
    No fan can win that race — the core spikes faster than heat reaches the heatsink.
 
-Population 2 is genuinely a voltage/boost problem and cannot be fixed by cooling.
-Population 1 is a power/airflow problem. **Both are aggravated by the firmware-locked
-undervolt**, since every boost runs at full stock voltage (VID > 1.3 V in **385/621**
-samples, max **1.5042 V**).
+Population 2 is a voltage/boost problem and cannot be fixed by cooling. Population 1 is a
+power/airflow problem. Measured: **VID > 1.3 V in 385/621 samples, max 1.5042 V.**
+
+*(The reading that both are aggravated by an inert, firmware-locked undervolt — i.e. that
+every boost runs at full stock voltage — depends on **inference I3, which has never been
+measured**. See "Second finding" for the A/B that would settle it.)*
 
 ### The fans work — but they lag ~90 s
 
@@ -317,47 +390,129 @@ utilization) to be meaningful.
 
 ---
 
-## Second finding: undervolting is LOCKED by firmware
+## Second finding: undervolting appears locked — **INFERRED, NOT MEASURED (open)**
 
-The ThrottleStop **Turbo FIVR Control** window shows the plane group box titled
-**"Locked"** (CPU Core / CPU P Cache / System Agent / Intel GPU / iGPU Unslice /
-CPU E Cache), `Unlock Adjustable Voltage` **checked but greyed out**, and Turbo
-Overclocking showing a padlock. ThrottleStop still *displays* the stored −89.8 mV
-offset but almost certainly **cannot write it**.
+> **STATUS CORRECTED 2026-07-17.** This section previously read "undervolting is LOCKED by
+> firmware" as though established. **It is not.** Every basis below is indirect. No test has
+> ever compared VID with the offset applied vs not applied. **Treat as an open question.**
+> This matters because it is load-bearing: much of the thermal reasoning downstream assumes
+> the CPU runs at stock voltage.
 
-**Cause:** BIOS NSCN41WW + microcode **0x133** — well past Intel's Raptor Lake
-Vmin-shift mitigation series. OEMs (Lenovo included) disabled the overclocking/
-undervolting mailbox as part of those mitigations. The user independently suspected a
-BIOS update did this; they were right. Widespread, not a misconfiguration.
+### Observations (what is actually seen)
+
+- TS **Turbo FIVR Control**: plane group box titled **"Locked"** (CPU Core / CPU P Cache /
+  System Agent / Intel GPU / iGPU Unslice / CPU E Cache); `Unlock Adjustable Voltage`
+  **checked but greyed out**; Turbo Overclocking shows a padlock.
+- `ThrottleStop.ini` stores offsets **as if live**, decoded from bits 31:21 as a signed
+  11-bit value in 1/1024 V units:
+
+| ini key | raw | decoded | plane / profile |
+|---|---|---|---|
+| `FIVRVoltage00` / `UnlockVoltage00=1` | `0xF4800000` | **−89.84 mV** | CPU Core, profile 0 Performance |
+| `FIVRVoltage03` / `UnlockVoltage03=1` | `0xF4600000` | **−90.82 mV** | CPU Core, profile 3 Battery |
+| `FIVRVoltage20` / `UnlockVoltage20=1` | `0xF4800000` | **−89.84 mV** | CPU Cache, profile 0 |
+| `FIVRVoltage23` / `UnlockVoltage23=1` | `0xF4600000` | **−90.82 mV** | CPU Cache, profile 3 |
+| `FIVRVoltage50` / `UnlockVoltage50=1` | `0xF4800000` | **−89.84 mV** | plane 5, profile 0 |
+| `FIVRVoltage53` / `UnlockVoltage53=1` | `0xFA200000` | **−45.90 mV** | plane 5, profile 3 |
+| `FIVRVoltage1x` / `UnlockVoltage1x=0` | `0x00000000` | **0 mV (none)** | **profiles 1 Game / 2 Internet: NO offset** |
+
+- Observed **VID max 1.5042 V**, >1.3 V in 385/621 samples. This *resembles* a stock
+  14900HX curve; an applied −89.8 mV would be expected nearer ~1.41 V. **This is a
+  curve-shape argument, not a measurement** — the chip's stock V/f curve is not known here.
+
+### Candidate cause (hypothesis)
+
+BIOS NSCN41WW + microcode **0x133** is past Intel's Raptor Lake Vmin-shift mitigation
+series (0x125→0x129→0x12B). OEMs including Lenovo disabled the overclocking/undervolting
+mailbox as part of those mitigations. This is widespread and would not be a
+misconfiguration. **Consistent with the observations — not proof of them.**
+
+### ⚠ THE DECISIVE TEST (not yet run) — a clean A/B already exists in the config
+
+Profiles **1 Game / 2 Internet carry no offset**, while **0 Performance carries −89.8 mV**.
+EPP is currently **128 on profiles 0, 1 and 2** (see current-state table), so that variable
+is matched. PL differs (Game has `NoSetPL` bit 1 → writes no power limits), but at ~50 W
+single-thread neither PL binds, so VID at a fixed multiplier is comparable.
+
+**Method:** run an identical single-thread burst on **Performance**, then on **Game**;
+compare **VID at the same MULTI** from the TS log.
+
+- **Performance VID ≈ 90 mV lower than Game** → the undervolt **is applying**. I3 is false,
+  and voltage is a live lever — which would overturn much of the downstream reasoning.
+- **VID identical** → locked, **confirmed by measurement** rather than by a greyed checkbox.
+
+Until this runs, statements elsewhere in this document that assume "no undervolt / full
+stock voltage" are resting on I3 and are **provisional**.
 
 **NEVER roll back the BIOS (or use a BIOS unlock mod) to regain undervolting.** The
 i9-14900HX is an affected Raptor Lake SKU. The Vmin-shift degradation is real,
 cumulative and **permanent**. Do not trade protection against irreversible CPU damage
 for an undervolt.
 
-**Consequence — this reframes the machine's history.** The user fixed out-of-the-box
-PROCHOT with *two* changes: an undervolt **and** a 70 W PL1 cap. The undervolt has since
-gone inert after a BIOS update, leaving the 70 W cap carrying the load alone — which fits
-their reported "mixed success."
+### Consequence *if* I3 is true (conditional — the whole branch hangs on the untested A/B)
 
-**UPDATE 2026-07-16 — the 70 W cap is NOT sufficient to prevent PROCHOT.** Once the MSR
-lock was removed and PL1 = 70 actually applied, the machine hit **100 °C anyway**, in
-16/621 samples at ~10% load. So the surviving half of the original fix does not hold the
-line by itself. Confirmed: the undervolt was doing the real work, and losing it to
-firmware is *why* PROCHOT is back.
+History: the user originally fixed out-of-the-box PROCHOT with *two* changes — an undervolt
+**and** a 70 W PL1 cap — and reports "mixed success" since. **If** the undervolt went inert
+after a BIOS update, the 70 W cap has been carrying the load alone, which fits that report.
 
-**Voltage is no longer a *direct* lever — but it is still the right target.** PL1 is a
-poor substitute: the 100 °C events occur at **41–55 W**, far under a 70 W PL1, so PL1
-never engages. Reduce voltage *indirectly* by capping peak multiplier (V(f) is
-superlinear at the top) and softening EPP. See TODO 2b.
+**Measured fact (independent of I3): the 70 W cap alone does NOT prevent PROCHOT.** Once the
+MSR lock was removed and PL1=70 actually applied, the machine hit **100 °C anyway** in
+16/621 samples at ~10% load.
+
+**Measured fact: PL1 is the wrong knob.** The 100 °C events occur at **41–55 W** (5/16) and
+**60–93 W** (11/16); the low-power ones sail under a 70 W PL1 untouched. Raising PL1 cannot
+help and would worsen sustained thermals.
+
+**Untested inference:** that "the undervolt was doing the real work, and losing it is *why*
+PROCHOT is back." Plausible and consistent — but it presumes I3. **If the A/B shows the
+undervolt is live, this entire framing is wrong** and the search should redirect to why an
+apparently-applied −89.8 mV still yields VID 1.5042 V.
+
+**Note:** the earlier advice here — "reduce voltage indirectly by capping peak multiplier
+and softening EPP" — has since been **empirically refuted**. See 2b/2e/2f: no partial
+frequency cap is honored on this machine, EPP does not cap sustained frequency, and a
+~5.0 GHz cap would save no meaningful voltage anyway.
 
 ---
 
-## ThrottleStop settings audit (2026-07-16)
+## CURRENT machine state (2026-07-17) — what changed tonight
+
+> The audit below this section describes the **original 2026-07-16** state. Several values
+> have since changed. **This table is authoritative for the machine's state now.** Read from
+> `ThrottleStop.ini` at `/mnt/c/Users/dreux/Desktop/Utilities/ThrottleStop.ini` (286 lines).
+
+| Key | Original | **Now** | Why |
+|---|---|---|---|
+| `MSRLock` | `0x9` (profiles 0+3) | **`0x0`** | **the fix** — Lock unchecked on all profiles |
+| `LockPowerLimits` | `1` | **`0`** | **the fix** |
+| `EnPerfPref0` (Performance EPP) | `32` | **`128`** | tuning test; **left in place** as the pending bursty-load A/B |
+| `SpeedShiftMaxMin0` | `0x4801` (Max 72 / Min 1) | **`0x3201`** (Max **50** / Min 1) | tuning test — **verified inert**, left set |
+| `SpeedShift` | (unchecked) | **`1`** | tuning test — inert |
+| `SyncMMIO` | `0x9` | `0x9` | unchanged |
+| `EnPerfPref1/2/3` | 128 / 128 / 220 | 128 / 128 / 220 | unchanged |
+
+**Windows power plan: fully restored to original** — `PERFBOOSTMODE` AC=**5**,
+`PROCTHROTTLEMAX` AC=**100**, `PERFEPP` AC=**33** (Windows' Balanced default; originally no
+explicit override existed, which resolved to the same 33). **DC values never touched.**
+
+**Consequence for a reviewer:** the machine is currently running **EPP=128 on Performance**,
+not the 32 that produced the `throttlestop-2026-07-16.txt` baseline. Any new log is
+therefore **not** directly comparable to that file without accounting for this — but that
+is also exactly the pending experiment (see 2f, "bursty-load question").
+
+Other keys of interest, unchanged: `PowerLimit4=0x7B0` (PL4 = 246 W), `NoSetPL=0x6`,
+`BatteryMonitoring=1`, `SaveOnExit=2`, `TVBoost=0x7`, `VMaxStress=0x8`, `RingDownBin=0xF`,
+`OffsetRange=1`, `NonTurboRatio1..4=0x15` (base 21x), `PROCHOT_Offset0=0x1` (→ 99 °C),
+`PROCHOT_Offset1..3=0x3` (→ 97 °C), `PROCHOT_Activate=1`, `HotKey0..4=0x0` (all unset),
+`LogFileDirectory=C:\Users\dreux\Desktop\Logs`.
+
+---
+
+## ThrottleStop settings audit (2026-07-16) — ORIGINAL state, see above for current
 
 Profile names: 0=Performance, 1=Game, 2=Internet, 3=Battery. `Profile=0`.
 
-### Undervolt (FIVR offsets, mV) — currently NOT applying (locked, see above)
+### Undervolt (FIVR offsets, mV) — **whether these apply is UNMEASURED (I3), see "Second finding"**
 
 | Plane | Performance | Game | Internet | Battery |
 |---|---|---|---|---|
