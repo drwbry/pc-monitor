@@ -2,8 +2,9 @@
 
 **Date:** 2026-07-16 (episode ~21:26 EDT, analysis ~21:50–22:30; **fix verified ~22:52–23:03**)
 **Status:** Root cause CONFIRMED. **Fix APPLIED and VERIFIED** — the unplug/replug cycle no longer latches the clamp. See "Fix verified" below.
-**New binding constraint:** heat. With the clamp gone the CPU boosts freely, and with the undervolt firmware-locked it hits 100 °C on transient boosts at light load. See "Third finding: thermal spikes".
-**Evidence:** `hwinfo_log_07162026.CSV` (21:25:05 → 21:35:14, 304 rows @ ~2s), `hwinfo_log_07162026_v2.CSV` (22:56:16 → 22:59:34, 101 rows @ ~2s, spans the replug), `throttlestop-2026-07-16.txt` (22:52:39 → 23:02:59, 621 rows @ 1s), `unplug_plug.docx` (3 TPL/TS screenshots + timeline), `ThrottleStop.ini`, live load test, FIVR screenshot, BIOS/microcode query.
+**New binding constraint:** heat. With the clamp gone the CPU boosts freely, and with the undervolt firmware-locked it reaches 100 °C — via **two** mechanisms (11/16 hot samples at 60–93 W, 5/16 as single-core spikes at 40–55 W). See "Third finding".
+**Corrected 2026-07-17** after Codex adversarial review: an earlier claim that *every* 100 °C event was low-power/high-multi was **false selection bias**, and the "repaste ruled out" conclusion that rested on it is **withdrawn** (now: not indicated, not proven unnecessary). Live tuning (5 levers) is **inconclusive** — confounded by ThrottleStop being open. See 2b.
+**Evidence:** `hwinfo_log_07162026.CSV` (21:25:05 → 21:35:14, 304 rows @ ~2s), `hwinfo_log_07162026_v2.CSV` (22:56:16 → 22:59:34, 100 rows @ ~2s, spans the replug), `throttlestop-2026-07-16.txt` (22:52:39 → 23:02:59, 621 rows @ 1s), `unplug_plug.docx` (3 TPL/TS screenshots + timeline), `ThrottleStop.ini`, live load test, FIVR screenshot, BIOS/microcode query.
 
 ## Machine
 
@@ -182,7 +183,7 @@ independent lines of evidence:
 | 3 | PL2 dynamic at replug | stayed 20 | **20 → 90** |
 | 4 | CPU Package Power on AC | pinned 15.6–19.2 W | **33–92.7 W** (mean 41) |
 | 5 | Core clocks on AC | ~1.4 GHz | **2.6–4.3 GHz avg, peak 5.4 GHz** |
-| 6 | `IA: Package-Level RAPL/PBM PL1` | **Yes 304/304 (100%)** | **Yes 12/101 (11.9%)** |
+| 6 | `IA: Package-Level RAPL/PBM PL1` | **Yes 304/304 (100%)** | **Yes 12/100 (12.0%)** |
 
 The decisive moment is in `hwinfo_log_07162026_v2.CSV`: at **22:57:14** `Charge Rate`
 goes −44 W → **0.000** (AC detected) and at **22:57:16** PL1 dynamic reads **70** and
@@ -192,7 +193,7 @@ taken ~20 s after the replug, shows the Performance profile active at **39.8 W /
 
 ### Trap: HWiNFO `PL1 Power Limit (Static)` still reads 17 W — ignore it
 
-It reads **17.0 W in all 101 rows**, including rows where the package is drawing
+It reads **17.0 W in all 100 rows**, including rows where the package is drawing
 **92.7 W**. That is physically impossible under a real 17 W PL1, so the field is stale —
 almost certainly cached when logging started (which was **while unplugged**, when 17 W
 was genuinely correct for the Battery profile). **Use `PL1 Power Limit (Dynamic)`**,
@@ -214,29 +215,55 @@ the machine.** From `throttlestop-2026-07-16.txt` (621 samples @ 1 s):
 | `C0%` (load) | **mean 10.4%** — the machine is essentially idle |
 | `POWER` | mean 37 W, max 108 W |
 | `MULTI` | max **53.87** (5.39 GHz) |
-| HWiNFO `Core Thermal Throttling` | **Yes in 41/101 (40.6%)** |
+| HWiNFO `Core Thermal Throttling` | **Yes in 41/100 (41.0%)** |
 
 The user's report — "PROCHOT has hit multiple times and I'm not doing anything, just
 opened Steam, Xbox app, VS Code" — is **confirmed by the data**.
 
-### Mechanism: single-core boost spikes at stock voltage
+### Mechanism: TWO populations, not one
 
-Every 100 °C event is the same shape — **high multiplier, low load**:
+> **CORRECTED 2026-07-17 after Codex adversarial review.** An earlier version of this
+> section claimed "**every** 100 °C event is high-multiplier/low-load" and quoted only the
+> three lowest-power rows. **That claim was false and was selection bias** — the
+> contradicting rows were present in the very first analysis output and were not carried
+> forward. The corrected distribution is below. Trust this table, not the old narrative.
 
-```
-23:02:14  multi=48.94  C0%=7.9   temp=100  vid=1.3710  pwr=40.9
-23:02:49  multi=50.05  C0%=7.2   temp=100  vid=1.3289  pwr=44.2
-23:01:31  multi=50.51  C0%=9.4   temp=100  vid=1.3882  pwr=55.5
-```
+All 16 samples at TEMP ≥ 99 °C, sorted by package power:
 
-**100 °C at 41 W and 7% load is not a cooling failure.** One P-core at ~5 GHz / 1.37 V
-has enormous *local* power density; package temperature reports the **hottest core**,
-while package *power* is a die-wide average. The core spikes faster than heat can even
-reach the heatsink — no fan can win that race. The chip is boosting to **5.0–5.4 GHz to
-launch Steam**, and because the undervolt is **firmware-locked** (see second finding),
-every one of those spikes runs at full stock voltage.
+| time | multi | C0% | temp | VID | power |
+|---|---|---|---|---|---|
+| 22:58:20 | 43.62 | 31.3 | 100 | 1.2158 | **93.1** |
+| 22:58:21 | 37.25 | 39.2 | 99 | 1.1803 | **89.7** |
+| 22:53:40 | 47.77 | 22.0 | 100 | 1.4565 | **81.9** |
+| 22:58:26 | 44.57 | 27.8 | 100 | 1.4327 | **81.5** |
+| 22:58:52 | 45.67 | 7.5 | 100 | 1.3513 | 78.8 |
+| 22:58:48 | 45.90 | 9.4 | 100 | 1.4315 | 76.9 |
+| 22:58:46 | 47.41 | 16.1 | 100 | 1.4647 | 76.4 |
+| 22:58:27 | 45.21 | 21.2 | 100 | 1.3452 | 74.3 |
+| 23:00:13 | 49.70 | 12.3 | 100 | 1.3538 | 73.9 |
+| 22:58:47 | 46.60 | 7.7 | 100 | 1.4296 | 68.7 |
+| 22:57:41 | 46.78 | 10.9 | 100 | 1.4095 | 61.8 |
+| 23:01:31 | 50.51 | 9.4 | 100 | 1.3882 | 55.5 |
+| 23:02:34 | 51.18 | 10.9 | 100 | 1.4371 | 52.4 |
+| 23:02:49 | 50.05 | 7.2 | 100 | 1.3289 | 44.2 |
+| 23:02:52 | 42.43 | 8.7 | 100 | 1.3171 | 43.4 |
+| 23:02:14 | 48.94 | 7.9 | 100 | 1.3710 | 40.9 |
 
-**Failure mode is voltage/boost, not heat transfer.**
+**Split: 11/16 at ≥60 W (up to 93.1 W); only 5/16 at <60 W.** There are two mechanisms:
+
+1. **High-power thermal events (11/16, 60–93 W, C0% 7.7–39.2%).** Real sustained/multi-core
+   heat. **Most cluster at 22:58:20–22:58:27, which is exactly during the fan ramp** —
+   fans were still at ~2400 RPM (see the fan table below). 93 W at 2400 RPM reaching
+   100 °C is expected, and is a *fan-lag* story, not a heat-transfer story.
+2. **Low-power spike events (5/16, 40–55 W, C0% 7.2–10.9%).** These *are* single-core boost
+   spikes: one P-core at ~5 GHz / 1.37 V has enormous *local* power density, and package
+   temperature reports the **hottest core** while package *power* is a die-wide average.
+   No fan can win that race — the core spikes faster than heat reaches the heatsink.
+
+Population 2 is genuinely a voltage/boost problem and cannot be fixed by cooling.
+Population 1 is a power/airflow problem. **Both are aggravated by the firmware-locked
+undervolt**, since every boost runs at full stock voltage (VID > 1.3 V in **385/621**
+samples, max **1.5042 V**).
 
 ### The fans work — but they lag ~90 s
 
@@ -256,13 +283,29 @@ milliseconds. The 100 °C hits land *during the ramp*. **Once fans are at 4200 R
 sustained 71 W settles at 85–89 °C** — which is normal for a 14900HX and is positive
 evidence the cooling path is healthy.
 
-### This *re-confirms* "do not repaste"
+### Repaste: NOT indicated, but no longer *proven* unnecessary — genuinely open
 
-The 2026-07-15/16 "do not repaste" call was made on power-starved data (49–58 °C at
-17 W) and could reasonably have been doubted once real load appeared. **It survives.**
-The steady-state figure (71 W → 86 °C at full fans) is what a healthy Legion 7 cooler
-does with this chip. The spikes are transient single-core voltage events, which a
-repaste cannot fix. **Still do not repaste.**
+> **REVISED 2026-07-17.** An earlier version claimed this data "re-confirms" do-not-repaste.
+> **It does not.** That claim rested on the false "all spikes are low-power" narrative
+> above. Codex adversarial review flagged it and is correct.
+
+The two reviewers disagree, and the disagreement is worth preserving rather than resolving
+prematurely:
+
+- **For "cooling is fine":** 71 W → 85–89 °C at 4200 RPM (HWiNFO rows 82–90) is normal for
+  a 14900HX. The 5/16 low-power spikes (100 °C at 41 W) are power-density artifacts that
+  **no repaste can fix**. Most of the high-power 100 °C events cluster in the fan-ramp
+  window at ~2400 RPM, which fully explains them without invoking bad paste.
+- **For "not ruled out":** rows at **76–86 W with fans already at 4200 RPM still reach
+  100 °C**. A healthy Legion 7 would be expected around 90–95 °C there. That is warm enough
+  that degraded heat transfer cannot be excluded on this data.
+
+**Verdict: do not repaste *yet*.** It is not indicated — nothing here demands it, and the
+headline symptom (spikes at light load) provably would not improve. But the earlier
+confident "ruled out" was over-claimed. **If a clean test is wanted**, run a sustained
+all-core load to steady state with fans pinned at max and read the stable temperature at a
+known wattage — that isolates heat transfer from both fan lag and boost spikes. None of
+tonight's data does that, because every window was bursty or mid-ramp.
 
 ## Instrumentation validation (was pending from 2026-07-15)
 
@@ -424,25 +467,65 @@ Also retire the premise that "70 W is what prevents PROCHOT" — at PL1 = 70 the
 100 °C events are **single-core voltage spikes at 41–55 W**, which sail under a 70 W PL1
 untouched.
 
-### 2b. Instead — attack boost voltage. Tune live, one variable at a time
+### 2b. Live tuning session 2026-07-16/17 — FIVE levers tested, all inert. **INCONCLUSIVE**
 
-With FIVR undervolting firmware-locked, voltage can only be reduced *indirectly*, by not
-asking for the top bins. V(f) is superlinear at the top of the curve, so shaving peak
-multiplier sheds voltage fast for little real-world loss. Levers, strongest first:
+Method: single-thread sustained burst (max single-core boost) + ThrottleStop's own 1 Hz
+log (MULTI/TEMP/VID/POWER). Baseline, one thread, 7–10% C0%:
+**peak multi 55.50 (5.53 GHz), 94 °C, VID 1.4656, 52.3 W.**
 
-1. **Max multiplier cap** (`Set Multiplier`, currently unchecked; peak seen **53.87**).
-   Capping ~54 → ~48–50 targets exactly the 1.37–1.50 V spikes. Best
-   temperature-per-lost-performance on this machine.
-2. **EPP on Performance** (currently **32** = very aggressive). Raising to ~64–84 makes
-   the governor less eager to jump to 5.4 GHz to open Steam. Directly targets
-   "max boost for background work."
-3. **Fan floor / curve** (Legion Toolkit). Fans idle at **1400 RPM** and take ~90 s to
-   reach 4200. A higher floor won't stop a millisecond spike, but it removes the ~90 s
-   window where every spike lands on a cold fan. **Depends on the power-mode question
-   below — resolve that first.**
+| Lever | Mechanism | Result |
+|---|---|---|
+| TS `Speed Shift Max` = 50 (ini confirmed `SpeedShiftMaxMin0=0x3201`) | HWP_REQUEST.Max (MSR 0x774) | **inert** — peak multi 54.64 |
+| Windows `PROCTHROTTLEMAX` = 80% | HWP max via OS policy | **inert** — peak multi 55.27 |
+| Windows `PROCTHROTTLEMAX` = **50%** | HWP max via OS policy | **inert** — peak multi 52.74 (would be ~2.7 GHz if honored) |
+| Windows `PERFBOOSTMODE` = 1 / 3 / 4 | turbo policy | **inert** — peak multi 52.9–55.7 |
+| TS `Speed Shift EPP` 32 → 128 (ini confirmed `EnPerfPref0=128`) | HWP_REQUEST.EPP | **marginal** — mean multi 53.9→50.7, **VID and temp unchanged** |
+| **Windows `PERFBOOSTMODE` = 0** | turbo disable | **WORKS** — multi **20.48**, VID **0.846**, **62.9 °C**, 15.7 W |
 
-Do this live, with temps on screen — not a blind edit. PROCHOT fires at 99 °C on
-Performance.
+**Only the binary turbo switch does anything.** Every partial-ceiling lever is ignored.
+
+**⚠ THIS RESULT IS NOT TRUSTWORTHY YET — uncontrolled confound.** *Every* test above ran
+with **ThrottleStop open with `Speed Shift EPP` checked**, meaning TS was continuously
+writing `IA32_HWP_REQUEST` on its own timer. Two controllers were fighting for the same
+register in every measurement. That plausibly explains the single most anomalous result —
+Windows' *own* `PROCTHROTTLEMAX` being inert on a machine Windows should own.
+
+**Also flawed: the stimulus.** A sustained 100%-pinned single thread *legitimately earns*
+max single-core boost — that is correct silicon behaviour, not the bug. EPP and boost-mode
+govern the **bursty light-load** response, which this stimulus never exercises, so their
+null results are **false negatives**. Three windows were additionally contaminated by
+background load (72–97 W means for a single-thread burst), so fine deltas (53.9 vs 50.7 vs
+50.2) are **inside the noise and must not be ranked**.
+
+**Next: the discriminating experiment.** Close ThrottleStop **entirely**, then retest
+`PROCTHROTTLEMAX=50%`, measuring with `\Processor Information(*)\% Processor Performance`
+(Secure Boot blocks LHM/MSR reads, so no temp/VID without TS; validated: reads 233% ≈
+5.1 GHz with TS running, consistent with TS's own MULTI).
+
+- Frequency **drops** (~2.7–3.5 GHz) → TS was stomping Windows. Machine **is** tunable;
+  the fix is "let one owner set the cap."
+- Frequency **stays ~5.2 GHz** → Lenovo DTT/EC genuinely owns HWP. Conclusion is real.
+
+**Do NOT bother testing TS `Set Multiplier`.** Legacy ratio request (`IA32_PERF_CTL`) is
+not the operative control path when Speed Shift/HWP is active — with HWP the only knobs are
+`IA32_HWP_REQUEST` min/max/desired/EPP. It would likely be firmware-locked anyway.
+
+**Correct EPP test (not yet run):** a **natural-use A/B**, not a burst. The 621-sample
+real-use log *is* the EPP=32 baseline; collect ~10 min of ordinary use at EPP=128 and
+compare the MULTI/TEMP distribution **at low C0%**.
+
+**Fan lever: dead.** See 2c — the test already ran in Performance/red, Lenovo's most
+aggressive curve.
+
+### 2e. Physics constraint on any future ceiling
+
+V(f) is steep only at the very top, so a partial cap buys little. Log evidence: multi
+**50.05** → VID 1.3289; multi **51.18** → VID 1.4371; multi **50.51** → VID 1.3882 — i.e.
+**~5.0 GHz still sits at ~1.33–1.44 V.** Meaningful voltage relief needs roughly
+**mid-40s multiplier or below**. Consequence: there is no useful "middle dial" to find —
+the useful operating points are **full turbo** or **≲4.0–4.5 GHz**. The deliverable is
+therefore likely **two profiles** (full turbo + a genuinely cool one), not one tuned
+ceiling. Turbo-off (2.05 GHz / 0.85 V / 63 °C) is the *proven-working* cool mode today.
 
 ### 2c. ~~OPEN QUESTION: which Legion power mode?~~ — **ANSWERED: Performance/red**
 
@@ -533,11 +616,13 @@ correct and by design** — the Legion drops to Quiet on DC. The fault is *speci
 
 ## Do not
 
-- **Do not repaste the CPU.** Ruled out twice, on two independent datasets. Originally on
-  power-starved data (49–58 °C at 17 W). **Re-confirmed 2026-07-16 on unclamped data:**
-  sustained 71 W settles at 85–89 °C with fans at 4200 RPM — normal for a 14900HX and
-  positive evidence the cooling path is healthy. The 100 °C events are transient
-  single-core voltage spikes (100 °C at **41 W / 7% load**), which no repaste can fix.
+- **Do not repaste the CPU — but this is "not indicated", NOT "proven unnecessary".**
+  Revised 2026-07-17; see "Repaste: genuinely open" above. Nothing in the data demands a
+  repaste, and the headline symptom (spikes at light load) provably would not improve.
+  But rows at 76–86 W with fans already at 4200 RPM still reach 100 °C, which does not
+  cleanly exclude degraded heat transfer. **Do not treat this as settled** — the earlier
+  "ruled out twice" wording was over-claimed and rested on a false premise. A steady-state
+  all-core test with fans pinned would settle it; no such test exists yet.
 - **Do not roll back the BIOS** to regain undervolting (see above).
 - **Do not hand-edit `ThrottleStop.ini` while ThrottleStop is running** — `SaveOnExit=2`
   overwrites the file on exit. Use the TPL GUI, or edit with ThrottleStop closed.
