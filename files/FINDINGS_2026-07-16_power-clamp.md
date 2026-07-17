@@ -121,20 +121,30 @@ incidental (2/304 rows on 2026-07-16 while fully clamped) and is **not** the mec
 
 ## The fix
 
-The lock is the bug. Two candidate remedies, in order of preference:
+The lock is the bug. **Uncheck the `Lock` checkbox on every profile** in TPL (MSR Power
+Limit Controls, plus the MMIO Lock in the Turbo Power Limits panel), Save, then
+**restart** to clear the currently-set lock.
 
-1. **Uncheck the `Lock` checkbox** in TPL (MSR Power Limit Controls, and the MMIO Lock
-   in the Turbo Power Limits panel) — for the **Battery** profile at minimum, ideally
-   for Performance too. Then Save, and **restart** to clear the currently-set lock.
-   Profile switches will then actually take effect.
-   *Trade-off:* the Lock was presumably enabled to stop Lenovo's DPTF/EC from overriding
-   limits. Unchecking it gives that ability back to the platform. The current behaviour
-   is strictly worse, but this is the user's tuning call.
-2. **Alternative — set `NoSetPL` bit 3** (`0x6` → `0xE`) so the Battery profile never
-   writes power limits at all. Battery would then only change EPP (`EnPerfPref3=220`),
-   which already produces the 10–11 W efficiency behaviour on its own. This preserves the
-   "lock Lenovo out" intent while removing the 17 W write that gets latched. Depends on
-   ThrottleStop applying+locking Performance at boot — **verify before relying on it**.
+With no lock, nothing latches: PL simply follows the active profile — **17 W on battery**
+(the deliberate battery profile, where that value belongs) and **70 W on AC**. That is
+the intended behaviour. The entire bug was 17 W leaking onto AC *through the lock*.
+
+**Do not keep the Lock on Performance** on the theory that it would latch 70/90/14 at
+boot and protect against the Battery write. The evidence refutes this: if Performance's
+lock engaged at boot, the first unplug's Battery write would be *rejected* and the
+machine would stay fast all day. It doesn't — it clamps to 17 W. So Performance's lock
+is not firing at boot, and on replug it cannot fire either because Battery has already
+locked the register. Keeping it buys nothing and leaves a second way for a bad value to
+latch.
+
+*Trade-off:* the Lock presumably existed to stop Lenovo's DPTF/EC from overriding limits;
+unchecking hands that back to the platform. Legion Toolkit manages modes anyway. If DPTF
+turns out to lower AC limits post-unlock, that is a fresh, observable problem to handle
+then — not a reason to keep the latch.
+
+**Rejected alternative:** setting `NoSetPL` bit 3 (`0x6` → `0xE`) so Battery never writes
+power limits. This leans on the same murky boot/profile-switch ordering that the evidence
+above shows is not understood — it is *more* fragile than unchecking Lock, not cleaner.
 
 **Verification after any change:** reboot → confirm TPL `MSR` row reads **70/90/14** →
 unplug, replug → re-check TPL still reads 70/90/14 → run an all-core load and confirm
