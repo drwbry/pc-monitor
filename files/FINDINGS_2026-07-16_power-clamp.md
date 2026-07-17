@@ -1,8 +1,9 @@
 # Root cause: ThrottleStop LOCKS the MSR power-limit register at the Battery profile's values
 
-**Date:** 2026-07-16 (episode ~21:26 EDT, analysis ~21:50–22:30)
-**Status:** Root cause CONFIRMED via ThrottleStop TPL window. **Fix identified but NOT yet applied or verified** — see "Next session" at the bottom.
-**Evidence:** `hwinfo_log_07162026.CSV` (21:25:05 → 21:35:14, 304 rows @ ~2s), `ThrottleStop.ini`, live load test, TPL screenshots (Performance + Battery), FIVR screenshot, BIOS/microcode query.
+**Date:** 2026-07-16 (episode ~21:26 EDT, analysis ~21:50–22:30; **fix verified ~22:52–23:03**)
+**Status:** Root cause CONFIRMED. **Fix APPLIED and VERIFIED** — the unplug/replug cycle no longer latches the clamp. See "Fix verified" below.
+**New binding constraint:** heat. With the clamp gone the CPU boosts freely, and with the undervolt firmware-locked it hits 100 °C on transient boosts at light load. See "Third finding: thermal spikes".
+**Evidence:** `hwinfo_log_07162026.CSV` (21:25:05 → 21:35:14, 304 rows @ ~2s), `hwinfo_log_07162026_v2.CSV` (22:56:16 → 22:59:34, 101 rows @ ~2s, spans the replug), `throttlestop-2026-07-16.txt` (22:52:39 → 23:02:59, 621 rows @ 1s), `unplug_plug.docx` (3 TPL/TS screenshots + timeline), `ThrottleStop.ini`, live load test, FIVR screenshot, BIOS/microcode query.
 
 ## Machine
 
@@ -166,6 +167,103 @@ unplug, replug → re-check TPL still reads 70/90/14 → run an all-core load an
 Raising the Battery profile's PL1 above 17 W is *not* a fix — it only changes which
 value gets latched.
 
+---
+
+## FIX VERIFIED (2026-07-16, 22:52–23:03)
+
+Lock unchecked on all profiles + restart. The user then ran a deliberate unplug/replug
+test with HWiNFO and ThrottleStop logging. **The clamp no longer latches.** Six
+independent lines of evidence:
+
+| # | Evidence | Before (clamped) | After (fixed) |
+|---|---|---|---|
+| 1 | TPL `MSR` row (screenshot, on AC) | 17 / 20 / 12, padlock lit | **70 / 90 / 14, Lock unchecked** |
+| 2 | PL1 dynamic at replug (22:57:14→:16) | stayed 17 | **17 → 70** |
+| 3 | PL2 dynamic at replug | stayed 20 | **20 → 90** |
+| 4 | CPU Package Power on AC | pinned 15.6–19.2 W | **33–92.7 W** (mean 41) |
+| 5 | Core clocks on AC | ~1.4 GHz | **2.6–4.3 GHz avg, peak 5.4 GHz** |
+| 6 | `IA: Package-Level RAPL/PBM PL1` | **Yes 304/304 (100%)** | **Yes 12/101 (11.9%)** |
+
+The decisive moment is in `hwinfo_log_07162026_v2.CSV`: at **22:57:14** `Charge Rate`
+goes −44 W → **0.000** (AC detected) and at **22:57:16** PL1 dynamic reads **70** and
+PL2 **90**, with package power jumping 12 W → 33 W and climbing. The third screenshot,
+taken ~20 s after the replug, shows the Performance profile active at **39.8 W /
+4392 MHz**. That is the exact move that used to leave the machine at 17 W / 1.4 GHz.
+
+### Trap: HWiNFO `PL1 Power Limit (Static)` still reads 17 W — ignore it
+
+It reads **17.0 W in all 101 rows**, including rows where the package is drawing
+**92.7 W**. That is physically impossible under a real 17 W PL1, so the field is stale —
+almost certainly cached when logging started (which was **while unplugged**, when 17 W
+was genuinely correct for the Battery profile). **Use `PL1 Power Limit (Dynamic)`**,
+which tracks the live enforced limit (sits at 70 = Performance's PL1, excursions to 90 =
+PL2, and DPTF wander 50–85). The 2026-07-15 log's Static=17 was correct only by
+coincidence — it agreed with a clamp that was genuinely present.
+
+---
+
+## Third finding: thermal spikes are now the binding constraint
+
+With the clamp gone the CPU boosts freely — and **heat, not power, is now what limits
+the machine.** From `throttlestop-2026-07-16.txt` (621 samples @ 1 s):
+
+| Signal | Value |
+|---|---|
+| `TEMP` | mean 76 °C, **max 100 °C**; ≥95 °C in **63/621** (10%), ≥99 °C in **16/621** (2.6%) |
+| `VID` | mean 1.21 V, **max 1.50 V**; **>1.3 V in 385/621 (62%)** |
+| `C0%` (load) | **mean 10.4%** — the machine is essentially idle |
+| `POWER` | mean 37 W, max 108 W |
+| `MULTI` | max **53.87** (5.39 GHz) |
+| HWiNFO `Core Thermal Throttling` | **Yes in 41/101 (40.6%)** |
+
+The user's report — "PROCHOT has hit multiple times and I'm not doing anything, just
+opened Steam, Xbox app, VS Code" — is **confirmed by the data**.
+
+### Mechanism: single-core boost spikes at stock voltage
+
+Every 100 °C event is the same shape — **high multiplier, low load**:
+
+```
+23:02:14  multi=48.94  C0%=7.9   temp=100  vid=1.3710  pwr=40.9
+23:02:49  multi=50.05  C0%=7.2   temp=100  vid=1.3289  pwr=44.2
+23:01:31  multi=50.51  C0%=9.4   temp=100  vid=1.3882  pwr=55.5
+```
+
+**100 °C at 41 W and 7% load is not a cooling failure.** One P-core at ~5 GHz / 1.37 V
+has enormous *local* power density; package temperature reports the **hottest core**,
+while package *power* is a die-wide average. The core spikes faster than heat can even
+reach the heatsink — no fan can win that race. The chip is boosting to **5.0–5.4 GHz to
+launch Steam**, and because the undervolt is **firmware-locked** (see second finding),
+every one of those spikes runs at full stock voltage.
+
+**Failure mode is voltage/boost, not heat transfer.**
+
+### The fans work — but they lag ~90 s
+
+From `hwinfo_log_07162026_v2.CSV`:
+
+| Time | CPU fan | pkg °C | pkg W |
+|---|---|---|---|
+| 22:57:10 (on battery) | 1400 | 60 | 12 |
+| 22:57:16 (replug +2 s) | **1400** | 67 | 33 |
+| 22:57:28 | 2000 | 88 | 43 |
+| 22:58:22 | 2400 | 88 | 79 |
+| 22:58:46 | **4200** | **100** | 86 |
+| 22:59:04 (fans maxed) | 4200 | **85** | 71 |
+
+Fans idle at **1400 RPM** and take **~90 s** to reach 4200. Boost arrives in
+milliseconds. The 100 °C hits land *during the ramp*. **Once fans are at 4200 RPM,
+sustained 71 W settles at 85–89 °C** — which is normal for a 14900HX and is positive
+evidence the cooling path is healthy.
+
+### This *re-confirms* "do not repaste"
+
+The 2026-07-15/16 "do not repaste" call was made on power-starved data (49–58 °C at
+17 W) and could reasonably have been doubted once real load appeared. **It survives.**
+The steady-state figure (71 W → 86 °C at full fans) is what a healthy Legion 7 cooler
+does with this chip. The spikes are transient single-core voltage events, which a
+repaste cannot fix. **Still do not repaste.**
+
 ## Instrumentation validation (was pending from 2026-07-15)
 
 **PASSED.** The `cpu_perf` signal predicted ~66% for a clamped CPU; the live clamp
@@ -195,13 +293,20 @@ cumulative and **permanent**. Do not trade protection against irreversible CPU d
 for an undervolt.
 
 **Consequence — this reframes the machine's history.** The user fixed out-of-the-box
-PROCHOT with *two* changes: an undervolt **and** a 70 W PL1 cap. If the undervolt went
-inert after a BIOS update, **the 70 W cap is what has actually been preventing PROCHOT**
-— which fits their reported "mixed success." That matters because 70 W is also what caps
-their performance: the fix and the limitation may be the same knob.
+PROCHOT with *two* changes: an undervolt **and** a 70 W PL1 cap. The undervolt has since
+gone inert after a BIOS update, leaving the 70 W cap carrying the load alone — which fits
+their reported "mixed success."
 
-**Voltage is no longer a lever on this machine — PL1 is the only one left.** Any PL1
-increase must be validated empirically against temps, with no undervolt headroom.
+**UPDATE 2026-07-16 — the 70 W cap is NOT sufficient to prevent PROCHOT.** Once the MSR
+lock was removed and PL1 = 70 actually applied, the machine hit **100 °C anyway**, in
+16/621 samples at ~10% load. So the surviving half of the original fix does not hold the
+line by itself. Confirmed: the undervolt was doing the real work, and losing it to
+firmware is *why* PROCHOT is back.
+
+**Voltage is no longer a *direct* lever — but it is still the right target.** PL1 is a
+poor substitute: the 100 °C events occur at **41–55 W**, far under a 70 W PL1, so PL1
+never engages. Reduce voltage *indirectly* by capping peak multiplier (V(f) is
+superlinear at the top) and softening EPP. See TODO 2b.
 
 ---
 
@@ -276,18 +381,15 @@ PROCHOT, with "mixed success," and does not recall the origin of 70 W. Treat it 
 
 ## Next session — TODO
 
-### 1. Verify the fix (do this first)
+### 1. ~~Verify the fix~~ — **DONE 2026-07-16. Fix verified.** See "FIX VERIFIED" above
 
-The user was to uncheck **`Lock` on all four profiles** in TPL (MSR Power Limit Controls
-+ the MMIO Lock in the Turbo Power Limits panel), Save, and restart. **Outcome unknown as
-of this writing.** Verify:
+Unchecking `Lock` on all profiles + restart resolved the clamp. The unplug/replug cycle
+now correctly restores 70/90 on AC. **This issue is closed.** The only step not
+re-executed was the all-core `% Processor Performance` load test — unnecessary, since
+package power (33–92.7 W) and clocks (up to 5.4 GHz) directly demonstrate the clamp is
+gone, which is what that proxy existed to infer.
 
-1. TPL `MSR` row reads **70 / 90 / 14** (not 17/20/12).
-2. **Unplug, replug** → still 70/90/14. *This is the real test — it is the exact move
-   that has been breaking it.*
-3. All-core load → `% Processor Performance` **>100** (not ~63).
-
-Load-test command that produced the 63% repro (WSL → PowerShell, native threads; the
+Load-test command retained for future PL work (WSL → PowerShell, native threads; the
 PowerShell `Start-Job` version is too weak — it only reached 19% utilization and proves
 nothing):
 
@@ -308,13 +410,58 @@ Start-Sleep -Seconds 6   # let PL1 tau settle
 [Load]::Stop = $true
 ```
 
-### 2. Then tune PL1 — as a SEPARATE change, one variable at a time
+### 2. ~~Walk PL1 up 70 → 90 → 110~~ — **CONTRAINDICATED by the 22:52–23:03 data**
 
-User wants **max performance on the 330 W charger**. 70 W is conservative for a chip
-rated ~157 W. But there is **no undervolt** to fall back on, and the 70 W cap may be the
-only thing that has been preventing PROCHOT. So: walk PL1 up (70 → 90 → 110 → …) under
-sustained load with **temps on screen**, stop where the user is comfortable. Do this
-live together — not a blind edit. PROCHOT fires at 99 °C on the Performance profile.
+**Do not raise PL1.** That plan was written before we had unclamped thermal data. It
+assumed the machine had thermal headroom to spend. It does not: it already hits 100 °C
+and thermal-throttles in **40% of samples at ~10% CPU load**. Raising PL1 spends
+headroom that isn't there and makes the spikes worse. **Heat is the binding constraint
+now, not power** — the goal has inverted from "let it draw more" to "stop it boosting so
+hard for trivial work."
+
+Also retire the premise that "70 W is what prevents PROCHOT" — at PL1 = 70 the machine
+*does* hit PROCHOT. PL1 is the wrong knob: it caps sustained die-average watts, but the
+100 °C events are **single-core voltage spikes at 41–55 W**, which sail under a 70 W PL1
+untouched.
+
+### 2b. Instead — attack boost voltage. Tune live, one variable at a time
+
+With FIVR undervolting firmware-locked, voltage can only be reduced *indirectly*, by not
+asking for the top bins. V(f) is superlinear at the top of the curve, so shaving peak
+multiplier sheds voltage fast for little real-world loss. Levers, strongest first:
+
+1. **Max multiplier cap** (`Set Multiplier`, currently unchecked; peak seen **53.87**).
+   Capping ~54 → ~48–50 targets exactly the 1.37–1.50 V spikes. Best
+   temperature-per-lost-performance on this machine.
+2. **EPP on Performance** (currently **32** = very aggressive). Raising to ~64–84 makes
+   the governor less eager to jump to 5.4 GHz to open Steam. Directly targets
+   "max boost for background work."
+3. **Fan floor / curve** (Legion Toolkit). Fans idle at **1400 RPM** and take ~90 s to
+   reach 4200. A higher floor won't stop a millisecond spike, but it removes the ~90 s
+   window where every spike lands on a cold fan. **Depends on the power-mode question
+   below — resolve that first.**
+
+Do this live, with temps on screen — not a blind edit. PROCHOT fires at 99 °C on
+Performance.
+
+### 2c. OPEN QUESTION (blocks the fan recommendation): which Legion power mode?
+
+A **1400 RPM idle floor with a ~90 s ramp to a 4200/4500 ceiling reads like Balanced,
+not Performance** — Performance/red normally holds a higher floor and ramps sooner. If
+the test ran in Balanced, a good chunk of the spiking is just a conservative fan curve
+losing the race, and switching to Performance mode (or a custom curve) blunts it
+**before** touching multiplier or EPP. Ask the user which mode (Fn+Q / Legion Toolkit)
+was active during the 22:52–23:03 test.
+
+**This is a different axis from the blue-light AC fault** — ThrottleStop *did* detect AC
+and switch to the Performance **profile** on replug (PL1 → 70, discharge → 0 W). The
+Legion **fan/power mode** is set by the EC and is invisible in the TS screenshots.
+
+### 2d. Minor, flagged not chased: `Charge Rate` = 0.00 W at 77% on AC
+
+Post-replug the battery sits at 77% drawing **0 W** — it should be charging. Possibly
+Lenovo conservation mode or a charge threshold in Legion Toolkit. The prior log charged
+at 65 W. Not performance-relevant; note only.
 
 ### 3. Then build the Gaming profile
 
@@ -362,8 +509,11 @@ latching). Worth fixing separately via BIOS/Legion Toolkit if it keeps happening
 
 ## Do not
 
-- **Do not repaste the CPU.** 49–58 °C under load, 73 °C max. Power-starved, not
-  heat-limited. This was explicitly considered and ruled out.
+- **Do not repaste the CPU.** Ruled out twice, on two independent datasets. Originally on
+  power-starved data (49–58 °C at 17 W). **Re-confirmed 2026-07-16 on unclamped data:**
+  sustained 71 W settles at 85–89 °C with fans at 4200 RPM — normal for a 14900HX and
+  positive evidence the cooling path is healthy. The 100 °C events are transient
+  single-core voltage spikes (100 °C at **41 W / 7% load**), which no repaste can fix.
 - **Do not roll back the BIOS** to regain undervolting (see above).
 - **Do not hand-edit `ThrottleStop.ini` while ThrottleStop is running** — `SaveOnExit=2`
   overwrites the file on exit. Use the TPL GUI, or edit with ThrottleStop closed.
