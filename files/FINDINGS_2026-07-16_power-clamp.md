@@ -444,18 +444,34 @@ multiplier sheds voltage fast for little real-world loss. Levers, strongest firs
 Do this live, with temps on screen — not a blind edit. PROCHOT fires at 99 °C on
 Performance.
 
-### 2c. OPEN QUESTION (blocks the fan recommendation): which Legion power mode?
+### 2c. ~~OPEN QUESTION: which Legion power mode?~~ — **ANSWERED: Performance/red**
 
-A **1400 RPM idle floor with a ~90 s ramp to a 4200/4500 ceiling reads like Balanced,
-not Performance** — Performance/red normally holds a higher floor and ramps sooner. If
-the test ran in Balanced, a good chunk of the spiking is just a conservative fan curve
-losing the race, and switching to Performance mode (or a custom curve) blunts it
-**before** touching multiplier or EPP. Ask the user which mode (Fn+Q / Legion Toolkit)
-was active during the 22:52–23:03 test.
+User-confirmed sequence: **red (Performance) → unplug → blue (Quiet) → HWiNFO logging
+started here → replug → red (Performance)**, log still running. So the entire post-replug
+load test (22:57:14 onward) ran in **Performance/red**.
 
-**This is a different axis from the blue-light AC fault** — ThrottleStop *did* detect AC
-and switch to the Performance **profile** on replug (PL1 → 70, discharge → 0 W). The
-Legion **fan/power mode** is set by the EC and is invisible in the TS screenshots.
+**This closes the fan lever.** The hypothesis was that a conservative *Balanced* curve was
+losing the race and that switching to Performance would blunt the spikes cheaply. Wrong —
+it was **already in Performance**, i.e. Lenovo's most aggressive built-in curve. There is
+no better mode to switch to.
+
+**And the curve is behaving correctly, not lazily.** Re-reading the ramp against load: the
+1400 RPM floor seen at 22:56:16–22:57:12 was the **Quiet/battery** floor (correct — the
+machine was unplugged). After the switch to red at 22:57:14, fans tracked *sustained*
+heat: the genuinely sustained load only began ~22:58:22 (40% usage, 79 W), and fans hit
+**4200 RPM by 22:58:40 — ~20 s later.** That is a sane response. The curve deliberately
+ignores sub-second transients, which is correct design (you do not want fans screaming
+every time a menu opens).
+
+**Conclusion: fans are working as designed and are NOT the lever.** No fan can win against
+a single-core spike anyway — core→heatsink thermal mass is the limit, not airflow. A
+custom LLT curve with a higher floor is available but would buy little; **do not spend
+effort here.** Go straight to the multiplier cap (2b lever 1) and EPP (lever 2). Demote
+lever 3 accordingly.
+
+**Note this is a different axis from the blue-light AC fault** — ThrottleStop's *profile*
+switching (PL1 → 70, discharge → 0 W) is independent of the Legion EC's *fan/power mode*.
+Both worked correctly this run.
 
 ### 2d. Minor, flagged not chased: `Charge Rate` = 0.00 W at 77% on AC
 
@@ -499,13 +515,21 @@ Worth checking whether ThrottleStop exposes a command-line/hotkey for profile sw
 AC/DC transition *during* a gaming session — including a spurious one from the blue-light
 AC-detection fault — will knock the profile back to Performance, not Gaming.
 
-### 5. Secondary, unfixed: the blue-light AC-detection fault
+### 5. Secondary: the blue-light AC-detection fault — **did NOT reproduce on 2026-07-16**
 
-Plugging into the 330 W brick sometimes leaves the Legion in Quiet/blue instead of
+Plugging into the 330 W brick *sometimes* leaves the Legion in Quiet/blue instead of
 Performance/red — the machine does not register AC. This is the **trigger** that makes
-`BatteryMonitoring=1` apply the Battery profile. Once the lock is gone it should be
+`BatteryMonitoring=1` apply the Battery profile. Now that the lock is gone it should be
 **harmless** (a glitch would apply 17 W, and replugging restores 70 W instead of
 latching). Worth fixing separately via BIOS/Legion Toolkit if it keeps happening.
+
+**2026-07-16 test: AC detection worked correctly.** User-confirmed red → unplug → blue →
+replug → **red**, and the telemetry agrees (`Charge Rate` −44 W → 0.00 W at 22:57:14,
+PL1 17 → 70 at :16). The fault is intermittent ("sometimes"), and it did not fire here.
+
+**Do not mistake normal behaviour for the fault.** **Blue/Quiet while unplugged is
+correct and by design** — the Legion drops to Quiet on DC. The fault is *specifically*
+**staying blue after replugging**. Only that counts as a reproduction.
 
 ## Do not
 
