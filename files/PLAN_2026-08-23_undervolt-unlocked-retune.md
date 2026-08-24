@@ -481,3 +481,68 @@ one out at all. Not worth chasing either way.
 **maxMULTI 57.18 on AC**. So it is still not binding, even post-OC-unlock — consistent with the
 July verdict and with it writing a different (non-OC-gated) MSR. **Do not rely on it as a
 frequency cap.** Use the Turbo Groups (Step 3), which are the real thing.
+
+---
+
+## Addendum 2 — 2026-08-23 22:55: settings applied, verification burst
+
+### Applied state (decoded from .ini, mtime 22:53)
+
+| | Performance (p0) | Battery (p3) |
+|---|---|---|
+| Turbo Groups 1-8 core | 54/54/52/52/52/52/52/52 | 54/54/52/52/52/52/52/**50** |
+| CPU Core offset | **-90.82 mV** | **-90.82 mV** |
+| CPU P Cache offset | **-89.84 mV** | -90.82 mV |
+| CPU E Cache offset | **-89.84 mV** | **-45.90 mV** |
+| EPP | 32 | **200** |
+| TVB | on | **off** |
+| V-Max Stress | **off** | on |
+
+Turbo Group ratios decode from `OneAD_EAX0=0x34343636 / EDX0=0x34343434` (bytes = 0x36,0x36,
+0x34,0x34 -> 54,54,52,52 for 1-4 cores) and `EAX3/EDX3=0x32343434` giving Battery's 50 at 8 cores.
+Game/Internet are untouched at `0x34343A3A` = 58/58/52/52.
+
+**Plane offsets are no longer matched.** Core moved to -90.8 but P Cache and E Cache still hold
+-89.8 on Performance, and Battery's E Cache sits at **-45.9 mV**. The 1 mV Core/P-Cache gap is
+harmless; the 45 mV E Cache gap on Battery is almost certainly leftover, not intent. Simplest
+correct state: **same offset on Core, P Cache and E Cache, on both profiles.**
+
+**Battery EPP is 200** (softened from 220, not set to 32) — correct, keep it.
+
+**TVB / V-Max Stress asymmetry is pre-existing**, not something introduced today:
+`TVBoost=0x7` (bits 0,1,2 -> profiles 0,1,2 on; Battery off) and `VMaxStress=0x8`
+(bit 3 -> Battery only). Worth making deliberate rather than inherited.
+
+### Consequence of Disable Turbo being inert: Battery's Turbo Groups ARE the battery cap
+
+Since TS's Disable Turbo does not take effect (Addendum 1), Battery's Turbo Groups are what
+actually limits boost on DC. That makes them the working lever the checkbox pretended to be.
+If you want less boost on battery, lower Groups 0/1 there — that path is proven to apply.
+
+### Verification burst, 22:55:31-22:55:51 (20 s, single thread, High priority, pinned CPU0)
+
+```
+n=28   maxMULTI=51.32   maxVID=1.4507   maxTEMP=100
+```
+
+- **No sample exceeded the 54x cap** (peak 51.32). But nothing *tried* to exceed it either, so
+  this is consistent with the cap working, **not proof of it**. Earlier today on AC the log hit
+  **57.18x**, so a heavier 1-2 core burst is the real test.
+- **VID during the hot samples ran 1.30-1.34** (e.g. 1.3153 at the 100 C sample) against
+  ~1.40-1.43 for comparable pre-undervolt samples. The undervolt is visibly holding.
+- **The 100 C spike still happened** — 22:55:46, TEMP 100 at **44.0 W and 9.0% C0%**.
+
+### The uncomfortable part: the ratio cap cannot fix these spikes
+
+The 100 C sample occurred at **MULTI 47.72 — well below the 54x cap.** A cap at 54 is simply
+never reached by these events, so it cannot clip them. This restates the July physics note:
+~5.0 GHz still sits at 1.33-1.44 V, and **real relief needs a mid-40s multiplier or below.**
+
+Caveats before over-reading this: `MULTI` is a 1 s average across cores, so the instantaneous
+peak core may have been higher; the machine was heat-soaked from repeated 97-99 C samples
+seconds earlier; and 20 s is far too short for fans to ramp, which July established is when
+these events land.
+
+**Do not chase this with more 20-second bursts.** The right measurement is a full ordinary day
+compared against the baselines already recorded (08-20: 0.89% of samples >=100 C; 08-23: 0.87%).
+Run tomorrow normally, then re-run the Step 6 awk and compare like-for-like.
