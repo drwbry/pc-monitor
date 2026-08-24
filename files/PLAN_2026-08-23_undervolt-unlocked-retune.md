@@ -546,3 +546,54 @@ these events land.
 **Do not chase this with more 20-second bursts.** The right measurement is a full ordinary day
 compared against the baselines already recorded (08-20: 0.89% of samples >=100 C; 08-23: 0.87%).
 Run tomorrow normally, then re-run the Step 6 awk and compare like-for-like.
+
+---
+
+## Addendum 3 — 2026-08-23 23:03: offsets synced, V-Max Stress off
+
+**Offsets confirmed synced.** All six keys — `FIVRVoltage00/03/20/23/50/53` (CPU Core,
+CPU P Cache, CPU E Cache x Performance, Battery) — now read `0xF4600000` = **-90.82 mV**, all
+with `UnlockVoltage=1`. Core, P Cache and E Cache matched on both profiles. This is the
+correct configuration.
+
+`VMaxStress=0x0` — off on every profile. `TVBoost=0x7` unchanged (still off on Battery only).
+
+### V-Max Stress: unchecking is right, and the logs confirm the reasoning
+
+The advice to let microcode handle it is sound, and it is now measured rather than asserted.
+`VMaxStress` was `0x8` — bit 3, i.e. **Battery profile only**. Over the last 10 days:
+
+| | samples | VMAX throttle events |
+|---|---|---|
+| On AC (checkbox **off**) | 32,463 | **252** |
+| On battery (checkbox **on**) | 30,824 | **1** |
+
+VMAX throttling fires almost exclusively on AC, where the checkbox was *not* set. So the
+voltage ceiling is being enforced by firmware/microcode independently of TS's checkbox —
+which is exactly the "let the microcode handle it" case. Turning it off changes nothing the
+platform was not already doing, and on a Raptor Lake part under the 0x133 Vmin-shift
+mitigations, deferring to microcode is the conservative choice.
+
+### Observation, for information only — no action indicated
+
+Peak VID on AC across 412,490 samples is **1.5935 V**. Before reading anything into that:
+every one of the top-VID samples sits at **low multiplier (16-40), low load (C0% 5-24%) and
+low power (8-47 W)**.
+
+```
+2026-08-23 11:31:16  MULTI=16.17  C0%=11.8  TEMP=64  VID=1.5935  PWR=16.6
+2026-08-23 21:30:50  MULTI=20.09  C0%= 9.3  TEMP=59  VID=1.5651  PWR=15.1
+2026-08-20 23:07:47  MULTI=34.00  C0%= 8.3  TEMP=72  VID=1.5479  PWR=24.0
+```
+
+That is VID read from one core briefly touching its max ratio while the rest idle — the top
+of the V/f curve at **low current**, which is the least damaging form. Vmin-shift degradation
+is driven by high voltage *combined* with sustained current and heat, which this is not.
+Across the whole set, `VID > 1.45 V` occurs in 4.16% of samples at an average of 30.4 W.
+
+Also note the July figure of "VID max 1.5042 V" came from a **621-sample, 10-minute window**
+versus **412,490 samples** here. A higher observed maximum over 660x more samples is a
+sampling-size artifact, not evidence that anything changed.
+
+**Still the right next step: use the machine normally tomorrow, then re-run the Step 6 awk and
+compare against the recorded baselines.** Nothing further to tune tonight.
