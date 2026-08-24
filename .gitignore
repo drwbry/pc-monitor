@@ -39,6 +39,11 @@ Thumbs.db
 # ---- Windows ADS markers that leak into WSL ----
 *:Zone.Identifier
 
+# ---- Claude Code local config ----
+# settings.json here is shared/committed project config;
+# settings.local.json is per-machine (one-off permission grants) and is not.
+.claude/settings.local.json
+
 # ---- Local config / secrets ----
 *.local
 .env
