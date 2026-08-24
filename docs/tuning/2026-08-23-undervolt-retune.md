@@ -12,6 +12,66 @@ running as confirmation, not as an open question.
 
 ---
 
+## CURRENT STATE as of 2026-08-23 23:10 — read this first
+
+The body below is the working record, written as things were learned, with three addenda
+appended in order. This block is the summary of where the machine actually ended up.
+
+### Applied and verified
+
+| Setting | Performance | Battery |
+|---|---|---|
+| CPU Core / P Cache / E Cache offset | **-90.82 mV** (all three matched) | **-90.82 mV** (all three matched) |
+| Turbo Groups, 1-8 active cores | 54/54/52/52/52/52/52/52 | 54/54/52/52/52/52/52/50 |
+| Speed Shift EPP | 32 | 200 |
+| V-Max Stress | off | off |
+| Thermal Velocity Boost | on | **off** |
+| PROCHOT offset | 1 | 3 |
+
+- **Undervolt is live** — confirmed by two independent markers at the 11:30 reboot (TVB reason
+  codes appearing after zero occurrences in 23 prior days, plus a ~90 mV VID drop matching the
+  configured offset). See "The undervolt IS applying" below.
+- **OC mailbox is open** — `Turbo Overclocking: Unlimited`, no padlock, Turbo Groups editable.
+- **Plane mapping resolved** — indices 0/2/5 are Core / P Cache / E Cache; System Agent is
+  index 4 and is untouched. The safety concern is cleared.
+- **V-Max Stress off is correct** — VMAX throttling fired 252x on AC (box off) vs 1x on battery
+  (box on) over 10 days, so firmware enforces the ceiling regardless.
+
+### Open / unresolved
+
+1. **The 54x Turbo Group cap is not proven to bind.** After the change, max MULTI is 51.32 and
+   no sample exceeded 54.5x — but nothing tried to. The one AC sample above 54.5x today
+   (55.31x at 11:31:54) predates the change. Needs a heavy 1-2 core load to confirm.
+2. **The 100 C spikes are not fixed.** A spike still landed at 44 W / 9% C0% — at **MULTI 47.72,
+   below the cap**, so a 54x cap can never clip these. Real relief needs a mid-40s multiplier,
+   which is a genuine performance sacrifice. Undecided.
+3. **Undervolt stability is unvalidated.** -90.82 mV was never a known-good value (the Aug-8
+   test proved the offset never applied, so the chip has never run there). Validate at
+   idle/light load, not benches. Watch WHEA 124 and unexpected reboots.
+4. **TVB asymmetry** — on for profiles 0/1/2, off for Battery. Low stakes, but inherited rather
+   than chosen.
+
+### How to verify
+
+```bash
+./scripts/ts-log-report.sh                              # today
+./scripts/ts-log-report.sh 2026-08-20 2026-08-23        # compare against baseline
+```
+
+Baselines to beat, from before the change:
+
+| Metric | Locked baseline | Target |
+|---|---|---|
+| VID median @ MULTI>=46 | 1.3983-1.4160 (5 arms, 17.7 mV spread) | <=1.32 |
+| samples >=100 C | 0.89% (08-20), 0.85% (08-23) | materially lower |
+| WHEA 124 | 0 | **must stay 0** |
+
+**Compare like workloads.** 08-21 and 08-22 look cool (0.12%, 0.08%) mostly because the machine
+was doing less, not because it ran cooler.
+
+
+---
+
 ## What the telemetry actually says
 
 ### Correction: HWiNFO has NOT been logging

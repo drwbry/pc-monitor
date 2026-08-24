@@ -4,6 +4,12 @@
 
 # READ FIRST — note for an independent reviewer
 
+> **Note on file paths:** this document refers to its evidence files by bare name
+> (`hwinfo_log_07162026.CSV`, `throttlestop-2026-07-16.txt`, `unplug_plug.docx`). They now live
+> in **`docs/tuning/evidence/`**. Repo paths in the text may be stale for the same reason —
+> `files/` was reorganised into `docs/` and `scripts/` on 2026-08-23.
+
+
 This document mixes **measurements** with **our interpretations**. The interpretations are
 argued at times forcefully; they are **not** established fact and should not anchor a fresh
 analysis. If you are reviewing this independently, the honest split is below. Prefer the
