@@ -115,33 +115,37 @@ If yes, you have something you have never had before: a **within-profile A/B**. 
 toggle the offset live under a fixed load with no profile switch, so no EPP or power-limit
 difference between arms. That is strictly better than the 2026-08-08 profile A/B.
 
-### 0b. Read the plane NAMES. This one is a safety gate — do not skip it.
+### 0b. RESOLVED 2026-08-23 from the FIVR screenshot — the mapping is the safe one
 
-`ThrottleStop.ini` currently carries, on profile 0 (Performance), offsets at plane
-indices **0, 2, and 5**:
+The plane order in the FIVR readback table is:
 
-```
-FIVRVoltage00=0xF4800000   ->  -89.84 mV   (plane 0)
-FIVRVoltage20=0xF4800000   ->  -89.84 mV   (plane 2)
-FIVRVoltage50=0xF4800000   ->  -89.84 mV   (plane 5)
-```
+| index | plane | offset on profile 0 |
+|---|---|---|
+| 0 | **CPU Core** | -89.84 mV |
+| 1 | Intel GPU | 0 |
+| 2 | **CPU P Cache** | -89.84 mV |
+| 3 | iGPU Unslice | 0 |
+| 4 | **System Agent** | **0** |
+| 5 | **CPU E Cache** | -89.84 mV |
 
-There are two plausible mappings and the .ini cannot distinguish them:
+So the .ini's offsets on indices 0/2/5 are **CPU Core + CPU P Cache + CPU E Cache, all
+matched, with System Agent untouched.** That is the classic TS index mapping, and it is
+exactly the correct and safe configuration. **The System Agent concern is cleared** — no
+action needed. Keep Core and P Cache matched whenever you change either.
 
-- **Classic TS index order** (0=CPU Core, 1=iGPU, 2=CPU Cache, 3=System Agent, …) → this is
-  **Core + Cache matched**. Fine, and the correct way to do it.
-- **The display order recorded from the 2026-08-08 screenshot** (CPU Core / CPU P Cache /
-  System Agent / Intel GPU / iGPU Unslice / CPU E Cache) → this is
-  **Core + System Agent at −90 mV with P-Cache untouched.**
+### 0c. CONFIRMED from the same screenshot — the OC mailbox is open
 
-The second case matters a lot. **System Agent at −90 mV is a classic cause of random
-reboots, USB dropouts, and WHEA errors**, and it buys close to nothing thermally. If SA
-carries an offset, **zero it before applying anything.**
+- **`Turbo Overclocking: Unlimited`**, no padlock. On 2026-08-08 this was padlocked.
+- `Unlock Adjustable Voltage` is **checked and no longer greyed**; the plane group box is no
+  longer titled "Locked".
+- **Turbo Groups are populated and editable** — see Step 3, this is the real prize.
+- `uCode 133` confirmed, `PL4 246`, `Cache Ratio 46` (min/max 8/50), `IccMax 511.75 A`.
 
-Open the FIVR window and write down which *named* plane holds which offset. Everything in
-Step 2 depends on this.
-
----
+**Caveat on the readback:** every plane's `Offset` column reads `+0.0000` even though the CPU
+Core slider shows -89.8 mV. Do **not** read that either way — on Raptor Lake the FIVR offset
+mailbox is frequently write-only, so TS displays 0 regardless of what is applied. The
+`Voltage ID` field in that same table (1.2838 at the time of the screenshot) is the live
+instrument. Use VID, not the Offset column.
 
 ## Step 1 — Prove it applies, before tuning it
 
@@ -244,10 +248,19 @@ The July/August investigation concluded this machine has **no usable partial fre
 That verdict was reached *while the OC mailbox was locked*. **Turbo Ratio Limits (MSR 0x1AD)
 and TVB ratio clipping are gated by the same OC lock bit that was blocking FIVR.**
 
-So check, in the FIVR window: are **Turbo Ratio Limits** and **Turbo Overclocking** still
-padlocked, or are they editable now?
+**CONFIRMED UNLOCKED 2026-08-23.** `Turbo Overclocking: Unlimited`, and the Turbo Groups
+panel is live and editable:
 
-If they are editable, you get the lever that provably did not exist before: a real
+| Group | Ratio | Active cores |
+|---|---|---|
+| **0** | **58** | **1** |
+| **1** | **58** | **2** |
+| 2-7 | 52 | 3-8 |
+
+Note what that says: **3+ active cores are already capped at 52x. Only 1-2 core boost runs
+to 58x.** The spike population is 1-2 core events, so Groups 0 and 1 are precisely the knob.
+
+You get the lever that provably did not exist before: a real
 **per-active-core-count ratio cap**. Capping 1–2 active cores at ~50–52x instead of 58x
 directly targets the low-power 100 °C spike population — the 5/16 hot samples at 40–55 W
 and 7–11% C0%, where one P-core at ~5 GHz / ~1.37 V has enough local power density that
@@ -279,8 +292,16 @@ nothing at light load because you are nowhere near a sustained thermal limit the
 Current state: `PROCHOT_Offset0=0x1` on Performance (trip at TjMax-1 = 99 C), `0x3` on the
 others.
 
-**Test:** set Performance's PROCHOT Offset to **8-10** (trip ~90-92 C), then read the temp
-ceiling out of the daily log. If the field is writable, `max TEMP` should stop reaching 100.
+**REVISED 2026-08-23, and DEPRIORITISED.** An offset of 8-10 (trip 90-92 C) was calibrated
+for a machine with no other lever. That is no longer the situation: Turbo Groups are unlocked
+(Step 3), and a ratio cap is far more surgical — it clips only the 1-2 core spikes, whereas
+TCC offset clips *everything*, sustained multi-core work included. On this machine sustained
+71 W settles at 85-89 C, so a 90 C trip would bite real workloads.
+
+**Do Step 3 first.** If you still want TCC offset afterward, start at **3-5** (trip 95-97 C),
+not 8-10 — that sits just above the normal sustained band and only catches genuine excursions.
+Then read the temp ceiling out of the daily log; if the field is writable, `max TEMP` should
+stop reaching 100.
 
 **Prior evidence cuts slightly against it:** max TEMP is **100 C on every day measured**
 (08-20/21/22/23) despite profile 0 already requesting offset 1, which is weak evidence the
@@ -374,7 +395,7 @@ full week.
 2. **Step 4** — set Performance EPP back to 32. Costs nothing, helps immediately, independent of everything else.
 3. **Step 1** — controlled A/B. Does the undervolt actually apply?
 4. **Step 3** — are Turbo Ratio Limits unlocked? Possibly the biggest win available.
-5. **Step 3b** — PROCHOT/TCC offset to 8-10. Independent of all the above; test in parallel.
+5. **Step 3b** — PROCHOT/TCC offset, *only if Step 3 is insufficient*, and start at 3-5 not 8-10.
 5. **Step 2** — walk the undervolt down from −50 mV with real light-load validation.
 6. **Step 5** — only when building the Gaming profile.
 
