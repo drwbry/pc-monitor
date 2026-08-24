@@ -5,9 +5,10 @@
 undervolting is now possible. If true, this is the **new firmware evidence** that
 `project-fivr-undervolt-locked` named as the only grounds for reopening.
 
-**Status: REOPENED, measurement pending.** The 2026-08-08 A/B (which measured a 6.7 mV gap
-against a ~90 mV request and concluded LOCKED) is superseded *pending* the controlled
-re-measurement in Step 1 below. Do not yet treat "the undervolt works" as established.
+**Status: REOPENED — and the telemetry below strongly supports the user.** The 2026-08-08 A/B
+(6.7 mV gap against a ~90 mV request -> LOCKED) is **superseded**. Two independent markers in
+ThrottleStop's own daily logs turn on at the same reboot this morning. Step 1 remains worth
+running as confirmation, not as an open question.
 
 ---
 
@@ -27,35 +28,53 @@ Column layout (note `NVIDIA GPU` spans **two** columns — clock and temp):
 
 ```
 1 DATE  2 TIME  3 MULTI  4 C0%  5 CKMOD  6 BAT_mW  7 TEMP  8 GPUMHz  9 GPUtemp  10 VID  11 POWER  12+ throttle reasons
+
+# GOTCHA: these are CRLF files. The LAST token on each line carries a trailing \r, so a
+# reason tally keyed on $i silently splits into "TEMP" and "TEMP\r" as two distinct keys.
+# Always: x=$i; sub(/\r$/,"",x)   -- this bit me once already.
 ```
 
-### Suggestive — but not yet proof — that the undervolt is now landing
+### The undervolt IS applying. Two independent markers turn on at the same reboot.
 
-Today's log has a ~6 h gap `15:12:49 → 21:10:48`. That gap is the reboot; everything from
-**21:10:48** onward is the post-BIOS-change session. (The 21:55 ThrottleStop *app* restart
-is a red herring — TS was already logging before it.)
+Today's log has several session gaps. The one that matters is **11:17:59 → 11:30:01** — a
+12-minute gap, i.e. a reboot. (A first pass split at the 21:55 ThrottleStop *app* restart,
+then at the 21:10 reboot; both were wrong. The BIOS change lands at ~11:30.)
 
-Median VID at matched load (`MULTI ≥ 48`, avg multiplier ~49.6 in every arm):
+**Marker 1 — throttle reason codes that have never appeared before.** `TVB` (Thermal
+Velocity Boost ratio clipping) first fires at **11:31:21**. Across the **23 prior daily logs
+it appears exactly zero times.** `VMAX` jumps similarly (2/11/0/4 on prior days → 111 today).
+New reason codes appearing means ThrottleStop can suddenly see and act on turbo/voltage
+fields it could not touch before — the signature of the OC mailbox opening.
 
-| Arm | n | avg MULTI | **VID median** | VID p95 | VID max |
-|---|---|---|---|---|---|
-| 2026-08-20 (locked) | 359 | 49.57 | **1.4060** | 1.4619 | 1.4965 |
-| 2026-08-21 (locked) | 127 | 49.13 | **1.4017** | 1.4514 | 1.4706 |
-| 2026-08-22 (locked) | 57 | 49.73 | **1.4061** | 1.4467 | 1.4860 |
-| 2026-08-23 pre-reboot (locked) | 199 | 49.58 | **1.3966** | 1.4581 | 1.4912 |
-| **2026-08-23 post-reboot** | 60 | 49.65 | **1.3313** | 1.4392 | 1.4780 |
+**Marker 2 — VID drops by almost exactly the requested offset,** at `MULTI >= 46`:
 
-Four independent locked days span only **9.5 mV** (1.3966–1.4061). The post-change arm sits
-**65 mV below the lowest of them.** That is well outside the day-to-day noise band.
+| Arm | n | avg MULTI | VID median | VID p90 |
+|---|---|---|---|---|
+| 2026-08-13 (locked) | 385 | 49.39 | 1.4150 | 1.4493 |
+| 2026-08-20 (locked) | 1051 | 47.80 | 1.4060 | 1.4528 |
+| 2026-08-21 (locked) | 300 | 47.87 | 1.3983 | 1.4452 |
+| 2026-08-22 (locked) | 122 | 48.21 | 1.4023 | 1.4406 |
+| 08-23 **00:00-11:18** (locked) | 287 | 47.99 | 1.4160 | 1.4572 |
+| **08-23 11:30-12:12 (post)** | 85 | **49.66** | **1.3083** | **1.3667** |
+| 08-23 21:10-22:11 (post) | 91 | 48.79 | 1.3309 | 1.4252 |
 
-**Why this is still not proof:**
-- n=60, a single ~62-minute window.
-- The **upper envelope barely moved** (p95 −8 to −23 mV, max −19 mV) while the median moved
-  −65 mV. A clean whole-curve offset should shift both. This pattern is consistent with a
-  *partial* application, or with a load-mix difference between arms.
-- `MULTI` is averaged over each 1 s sample while `VID` is an instantaneous single-core read,
-  so passive log rows never truly match operating points. This is exactly why the 2026-08-08
-  test used a controlled pinned burst instead. Same discipline applies now.
+Five independent locked arms span just **17.7 mV** on the median (1.3983-1.4160) and
+**16.6 mV** on p90 (1.4406-1.4572). The 11:30 arm sits **90-108 mV below** on the median and
+**74-90 mV below** on p90 — *while running a higher average multiplier*, which if anything
+should have pushed VID up.
+
+The configured offset is **89.84 mV**. The p90 shift against the locked mean is **~90.5 mV**.
+
+Crucially, **the median and the envelope move together here**, which is what a genuine
+whole-curve offset looks like. (An earlier pass that split at 21:10 showed the median moving
+65 mV while p90 barely moved — that arm was contaminated by 10 hours of post-change data
+sitting in its "before" side.)
+
+**Remaining caveats, honestly:** n=85 in the cleanest arm, and the 21:10-22:11 arm is weaker
+(p90 1.4252 is close to the locked band). `MULTI` is a 1 s average while `VID` is an
+instantaneous single-core read, so passive rows never perfectly match operating points. The
+controlled A/B in Step 1 is still worth the two minutes — but it is now a **confirmation**,
+not an open question. Plan on the undervolt being live.
 
 ### Thermal and throttle baseline (record before changing anything)
 
@@ -85,6 +104,12 @@ Open TS → **FIVR**. On 2026-08-08 the plane group box was titled **"Locked"** 
 
 - Is the "Locked" title gone?
 - Is `Unlock Adjustable Voltage` now *clickable* rather than greyed?
+
+While you are in there: **check whether the TVB / Turbo Ratio fields are now populated.**
+`TVB` and `VMAX` throttle reasons appear in today's log for the first time in 23 days of
+logging, which suggests TS gained access to more than just the voltage offset. `TVBoost=0x7`
+and `VMaxStress=0x8` are sitting in the .ini. This is also why the within-profile toggle A/B
+(offset only, nothing else moves) is the right test rather than more log slicing.
 
 If yes, you have something you have never had before: a **within-profile A/B**. You can
 toggle the offset live under a fixed load with no profile switch, so no EPP or power-limit
@@ -236,6 +261,32 @@ bundle the two.
 
 ---
 
+## Step 3b — PROCHOT / TCC Activation Offset: the one lever never tested
+
+Worth calling out separately because it is **independent of everything above** and can be
+tested today either way.
+
+The five levers the July/August work tested were Speed Shift Max, `PROCTHROTTLEMAX`,
+`PERFBOOSTMODE`, TS EPP, and turbo-off. **TCC Activation Offset was not among them.** It is
+MSR 0x1A2 `TEMPERATURE_TARGET` — it lowers effective TjMax so thermal clipping engages
+*earlier*. (Different mechanism from BD PROCHOT, which memory correctly notes is
+VRM-protective and greyed out. Don't conflate them.)
+
+Why it fits this machine's actual complaint: the problem population is single-core spikes at
+**40-55 W and 7-11% C0%**. Lowering TjMax clips exactly those at the source, and costs almost
+nothing at light load because you are nowhere near a sustained thermal limit there.
+
+Current state: `PROCHOT_Offset0=0x1` on Performance (trip at TjMax-1 = 99 C), `0x3` on the
+others.
+
+**Test:** set Performance's PROCHOT Offset to **8-10** (trip ~90-92 C), then read the temp
+ceiling out of the daily log. If the field is writable, `max TEMP` should stop reaching 100.
+
+**Prior evidence cuts slightly against it:** max TEMP is **100 C on every day measured**
+(08-20/21/22/23) despite profile 0 already requesting offset 1, which is weak evidence the
+write is not taking. But a 1 Hz sample can legitimately catch 100 before TCC clips, so that
+is suggestive, not decisive. Ten minutes to settle.
+
 ## Step 4 — Fix a live regression that is costing you performance right now
 
 ```
@@ -323,6 +374,7 @@ full week.
 2. **Step 4** — set Performance EPP back to 32. Costs nothing, helps immediately, independent of everything else.
 3. **Step 1** — controlled A/B. Does the undervolt actually apply?
 4. **Step 3** — are Turbo Ratio Limits unlocked? Possibly the biggest win available.
+5. **Step 3b** — PROCHOT/TCC offset to 8-10. Independent of all the above; test in parallel.
 5. **Step 2** — walk the undervolt down from −50 mV with real light-load validation.
 6. **Step 5** — only when building the Gaming profile.
 
