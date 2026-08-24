@@ -413,3 +413,71 @@ file on exit. Use the GUI, or close TS first.
   established while the OC mailbox was locked.
 - The July MSR-lock fix is **intact and unaffected**: `MSRLock=0x0`, `LockPowerLimits=0`.
   Nothing in this plan touches it. Do not re-litigate that one.
+
+---
+
+## Addendum 2026-08-23 — Battery profile: EPP is correct, Disable Turbo is not working
+
+### EPP 220 on Battery is right. Do not set it to 32.
+
+EPP is the one lever measured to work on this machine under bursty load (2026-08-08: an EPP
+efficiency bias roughly halved median delivered clock and power). Battery's `EnPerfPref3=220`
+is the setting doing the work. Measured over the last 10 days of logs:
+
+| | n | avg MULTI | avg VID | avg POWER | avg TEMP |
+|---|---|---|---|---|---|
+| On AC | 279,109 | 17.55 | 1.2346 | 18.4 W | 61.2 C |
+| On battery | 132,364 | 14.26 | **1.0065** | **15.2 W** | 61.0 C |
+
+That VID and power gap is the Battery profile working as intended. Setting EPP to 32 there
+would make the machine boost aggressively on battery and cost runtime for nothing. If battery
+ever feels too sluggish, soften 220 -> ~180; do not go near 32.
+
+(`EnPerfPref0` is now **32** — the Aug-8 leftover has been corrected. Step 4 is done.)
+
+### "Disable Turbo" on the Battery profile is NOT taking effect
+
+Intent is sound, but it does not work. Restricted to **sustained** battery runs (`BAT_mW != 0`
+for >=300 consecutive samples, so brief AC battery-assist spikes are excluded):
+
+```
+n=132,205   avgMULTI=14.27   maxMULTI=53.18   samples >22x: 14,379 (10.88%)
+```
+
+Non-turbo ratio is **21**. If Disable Turbo were effective, MULTI could not exceed ~22.
+It reaches **53.18x**, and does so in nearly 11% of sustained-battery samples.
+
+This is the same class of finding as `PROCTHROTTLEMAX` being a no-op: TS's Disable Turbo
+writes `IA32_MISC_ENABLE` bit 38, which autonomous HWP appears to ignore on this machine.
+
+**If you actually want turbo off on battery, use the path that was already proven to work
+here** — Windows `PERFBOOSTMODE=0`, measured 2026-07-17 at 2179 MHz / ~0.85 V / ~63 C / 15.7 W.
+Set it on the **DC side only**:
+
+```
+powercfg /setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR be337238-0d82-4146-a960-4f3749d470c7 0
+powercfg /setactive SCHEME_CURRENT
+```
+
+Caveat: Legion Toolkit rewrites this same single scheme (`381b4222-...`). LLT writes `PERFEPP`,
+not `PERFBOOSTMODE`, so this should survive — but re-check it after LLT mode changes.
+
+**Whether you want this at all is a judgement call.** Battery already averages 15.2 W and
+14.26x. Turbo-off would be a third efficiency hammer stacked on EPP 220 and PL1 17 W, and it
+makes the machine genuinely slow (2.2 GHz ceiling). The occasional turbo burst is arguably
+what keeps it usable. Only reach for it if you want maximum runtime.
+
+### SpeedStep unchecked on Battery — inert, ignore it
+
+Legacy EIST (`IA32_MISC_ENABLE` bit 16) is superseded by Speed Shift / HWP, which is active
+here (`SpeedShift=1`, and every July finding shows HWP is the operative path). It makes no
+practical difference on this machine. Also, per the .ini `EIST=6` appears to set only profiles
+1 and 2, which would mean **Performance has it unchecked too** — Battery may not be the odd
+one out at all. Not worth chasing either way.
+
+### Still-inert: Speed Shift Max
+
+`SpeedShiftMaxMin0=0x3401` sets Performance's Speed Shift **Max = 52**, yet the logs show
+**maxMULTI 57.18 on AC**. So it is still not binding, even post-OC-unlock — consistent with the
+July verdict and with it writing a different (non-OC-gated) MSR. **Do not rely on it as a
+frequency cap.** Use the Turbo Groups (Step 3), which are the real thing.
