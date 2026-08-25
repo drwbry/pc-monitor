@@ -657,3 +657,68 @@ sampling-size artifact, not evidence that anything changed.
 
 **Still the right next step: use the machine normally tomorrow, then re-run the Step 6 awk and
 compare against the recorded baselines.** Nothing further to tune tonight.
+
+---
+
+## Addendum 4 — 2026-08-25: two-day follow-up, false-alarm frequency cap resolved as charger wattage
+
+Ran the "use it normally, then compare" step above against 08-24 and 08-25. Two things looked
+wrong at first and both needed a live test to sort out.
+
+**False alarm #1 — coverage.** 08-24/25 logged at only 17-30% of wall-clock (vs. 99.9% on the
+cleanest baseline day). Checked the gap structure: a handful of gaps of 2,000-11,000 s each,
+not scattered small dropouts -> normal sleep/lid-close, not a broken logger. Benign.
+
+**False alarm #2 — apparent new ~41x multiplier ceiling.** Both 08-24 and 08-25 topped out at
+MULTI 41-43 on AC and battery, where 08-20/22/23 baselines reached 51-58x. Worst case: 08-24
+20:46-21:19, ~90 s pinned at MULTI 40.9-41.0 while package power swung 20-71 W underneath it -
+a flat ratio under swinging power looks like a hard cap, not organic load. Also noted PL1
+firing at ~20 W average on AC those two days (vs. 66-93 W on every prior baseline day) -
+same *shape* as the July MSR-lock bug, though `MSRLock=0x0` and `LockPowerLimits=0` are both
+still confirmed correct in the ini.
+
+Two hypotheses chased and killed before landing on the real one:
+1. *SyncMMIO=0x9 (bits for profiles 0+3) re-locking Performance/Battery* - live TPL screenshots
+   showed both the MSR and MMIO rows reading 70/90/14, Lock unchecked, for Performance. Ruled out.
+2. *Battery's Speed Shift Max (misread as 41) leaking onto Performance* - misread the
+   screenshot. `Min 4 / Max 72` on the TPL Miscellaneous panel is the CPU's fixed hardware SST
+   range (400-7200 MHz), identical on every profile, not a per-profile setting. The real
+   per-profile field is `Speed Shift [min][max]`: Performance 1/52, Battery 1/72 - Battery is
+   the *less* capped profile on this field. Ruled out.
+
+**Root cause, confirmed by a controlled A/B (2026-08-25):** charger wattage. Pinned single-core
+burst (PowerShell tight loop, `PriorityClass=High`, `ProcessorAffinity=1`, 30 s), Performance
+profile, watching the live multiplier in the TS main window:
+
+| charger | max MULTI reached |
+|---|---|
+| 65 W charger | **41.77** |
+| 330 W brick | **51** (once) |
+
+Same profile, same core, same test - only the charger changed, and the ceiling moved ~10 ratio
+steps. Matches the live screenshot from earlier in this session too: Performance profile
+active, Limit Reasons showed PL1 red at only 22-25 W package power on the 65 W charger, nowhere
+near the configured 70 W - the platform (EC, adapter-aware power management) was already
+holding the package well under the profile's own limit before RAPL ever needed to intervene.
+**This is expected Lenovo adapter-detection behavior, not a bug, and not a new hidden frequency
+cap.** The 08-24/08-25 log plateaus were very likely captured at least partly on the 65 W
+charger.
+
+**Consequence:** the 08-24 AC-side reading of 80.3 W package power (which shouldn't be
+reachable on a 65 W-rated charger) means at least part of that day was genuinely on the 330 W
+brick - so the flat 41x plateau observed then wasn't purely a charger artifact for that
+specific window. Most likely explanation given July's physics note (mid-40s multiplier is
+roughly what 70 W sustained supports under real, multi-core load): an all-core or
+multi-threaded load legitimately PL1-bound at 70 W lands around low-40s, which is normal RAPL
+behavior, not a cap bug - consistent with, not contradicting, the charger finding. Not
+re-tested directly with a controlled all-core burst; flag as open only if a future session
+wants to nail down that exact number.
+
+**Minor open thread, not urgent:** 51x vs. the 54x Turbo Group ceiling for 1 active core on
+Performance, on the 330 W brick - single 30 s burst, may not reflect the true ceiling
+(opportunistic turbo doesn't guarantee hitting the peak every burst). Worth a longer/repeated
+burst only if there's appetite to chase the last ~2%.
+
+**Takeaway for daily use:** for any future tuning/verification work, always do it on the 330 W
+brick. The 65 W charger will always show reduced boost by design - don't mistake it for a
+regression.
