@@ -32,6 +32,10 @@ Open it from the cockpit's **Game Mode** button or the tray icon's **Start Game 
 You see a list of what is running, all checked, with RAM per item. Uncheck anything you want to
 keep, then **Confirm**. Ending Game Mode works the same way in reverse.
 
+Apps you often use while gaming (Chrome, Discord, Spotify) appear in a separate "Also running"
+section, **unchecked**. Tick them only when you want them closed too. In `gamemode.json` this is
+`"SelectedByDefault": false`.
+
 - The list lives in `%LocalAppData%\PcMonitor\gamemode.json` (written with defaults on first use).
   Edit it to add or remove apps. Item kinds are `App`, `Service` and `Command`.
 - What was closed is saved in `gamemode-state.json`, so "End Game Mode" still works after a reboot.
@@ -39,7 +43,7 @@ keep, then **Confirm**. Ending Game Mode works the same way in reverse.
   even though PcMonitor itself runs elevated.
 - Services are stopped only. Their startup type is never changed, so a reboot is always a clean reset.
 - A hardcoded protected list (ThrottleStop, Afterburner, Legion Toolkit, Steam and other launchers,
-  Discord, G HUB, NVIDIA, audio, Defender, VPNs, PcMonitor) is never touched, whatever the JSON says.
+  G HUB, NVIDIA, audio, Defender, VPNs, PcMonitor) is never touched, whatever the JSON says.
 - Ending WSL closes every Claude Code session running in WSL.
 
 ## Data locations (Windows side)

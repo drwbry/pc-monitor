@@ -38,6 +38,23 @@ public static class GameModeDefaults
                 Id = "onedrive", DisplayName = "OneDrive",
                 ProcessNames = ["OneDrive"], CloseArgs = "/shutdown",
             },
+            // Optional: shown in their own section, unchecked, because they're often used while gaming.
+            new GameModeItem
+            {
+                Id = "chrome", DisplayName = "Chrome",
+                ProcessNames = ["chrome"], AppId = "Chrome", SelectedByDefault = false,
+                Note = "reopens with your normal startup tabs",
+            },
+            new GameModeItem
+            {
+                Id = "discord", DisplayName = "Discord",
+                ProcessNames = ["Discord"], AppId = "com.squirrel.Discord.Discord", SelectedByDefault = false,
+            },
+            new GameModeItem
+            {
+                Id = "spotify", DisplayName = "Spotify",
+                ProcessNames = ["Spotify"], SelectedByDefault = false,
+            },
             new GameModeItem
             {
                 Id = "m365-copilot", DisplayName = "Microsoft 365 Copilot",

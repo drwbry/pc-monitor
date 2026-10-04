@@ -4,13 +4,14 @@ public static class GameModePlanner
 {
     /// <summary>
     /// Processes and services Game Mode must never touch, whatever the config says:
-    /// tuning tools, game launchers, voice/peripherals, drivers, security, VPNs and PcMonitor itself.
+    /// tuning tools, game launchers, peripherals, drivers, security, VPNs and PcMonitor itself.
+    /// (Discord is not here: it is an optional, unchecked-by-default item instead.)
     /// </summary>
     public static readonly IReadOnlySet<string> ProtectedProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "PcMonitor", "ThrottleStop", "MSIAfterburner", "RTSS", "Lenovo Legion Toolkit",
         "steam", "steamwebhelper", "EpicGamesLauncher", "EADesktop", "EALauncher", "GalaxyClient",
-        "Discord", "lghub", "lghub_agent", "lghub_system_tray", "lghub_updater", "EarTrumpet",
+        "lghub", "lghub_agent", "lghub_system_tray", "lghub_updater", "EarTrumpet",
         "NVDisplay.Container", "nvcontainer", "NVIDIA App", "RtkAudUService64",
         "MsMpEng", "SecurityHealthSystray", "Surfshark", "Surfshark.Service",
         "tailscaled", "tailscale-ipn", "PanGPA", "PanGPS",

@@ -34,6 +34,10 @@ public partial class GameModeDialogViewModel : ObservableObject
     public string ConfirmText => Exiting ? "Confirm - end Game Mode" : "Confirm - start Game Mode";
 
     public ObservableCollection<GameModeRowViewModel> Rows { get; } = new();
+    /// <summary>Running apps that are often used while gaming (Chrome, Discord, ...). Unchecked by default.</summary>
+    public ObservableCollection<GameModeRowViewModel> OptionalRows { get; } = new();
+    public bool HasOptional => OptionalRows.Count > 0;
+    private IEnumerable<GameModeRowViewModel> AllRows => Rows.Concat(OptionalRows);
     public ObservableCollection<string> Lines { get; } = new();
 
     [ObservableProperty] private bool _isLoading = true;
@@ -56,7 +60,7 @@ public partial class GameModeDialogViewModel : ObservableObject
     }
 
     private bool CanConfirm() =>
-        IsEditable && (Rows.Any(r => r.IsSelected) || (Exiting && Rows.Count == 0));
+        IsEditable && (AllRows.Any(r => r.IsSelected) || (Exiting && Rows.Count == 0));
 
     public async Task LoadAsync()
     {
@@ -75,11 +79,16 @@ public partial class GameModeDialogViewModel : ObservableObject
                 var plan = await Task.Run(_svc.PlanEnter);
                 ConfigError = _svc.ConfigError;
                 foreach (var p in plan)
-                    AddRow(new GameModeRowViewModel
+                {
+                    var row = new GameModeRowViewModel
                     {
                         Name = p.Item.DisplayName, Note = p.Item.Note, Planned = p,
                         MemoryBytes = p.MemoryBytes, MemoryText = FormatBytes(p.MemoryBytes),
-                    });
+                        IsSelected = p.Item.SelectedByDefault,
+                    };
+                    AddRow(row, optional: !p.Item.SelectedByDefault);
+                }
+                OnPropertyChanged(nameof(HasOptional));
                 if (plan.Count == 0)
                     Status = "Nothing on the Game Mode list is running right now.";
             }
@@ -95,10 +104,10 @@ public partial class GameModeDialogViewModel : ObservableObject
         }
     }
 
-    private void AddRow(GameModeRowViewModel row)
+    private void AddRow(GameModeRowViewModel row, bool optional = false)
     {
         row.PropertyChanged += OnRowChanged;
-        Rows.Add(row);
+        (optional ? OptionalRows : Rows).Add(row);
     }
 
     private void OnRowChanged(object? sender, PropertyChangedEventArgs e)
@@ -110,7 +119,7 @@ public partial class GameModeDialogViewModel : ObservableObject
     {
         if (!Exiting)
         {
-            var bytes = Rows.Where(r => r.IsSelected).Sum(r => r.MemoryBytes);
+            var bytes = AllRows.Where(r => r.IsSelected).Sum(r => r.MemoryBytes);
             TotalText = bytes > 0 ? $"About {FormatBytes(bytes)} of RAM will be freed." : "";
         }
         ConfirmCommand.NotifyCanExecuteChanged();
@@ -124,7 +133,7 @@ public partial class GameModeDialogViewModel : ObservableObject
         void Log(string line) => Application.Current.Dispatcher.Invoke(() => Lines.Add(line));
         try
         {
-            var selected = Rows.Where(r => r.IsSelected).ToList();
+            var selected = AllRows.Where(r => r.IsSelected).ToList();
             if (Exiting)
             {
                 var items = selected.Select(r => r.Stopped!).ToList();

@@ -36,6 +36,9 @@ public sealed record GameModeItem
     /// <summary>Extra processes whose RAM is attributed to this item (e.g. vmmem for a VM service).</summary>
     public string[] MemoryProcessNames { get; init; } = [];
 
+    /// <summary>False = an optional item: listed separately and unchecked until the user ticks it.</summary>
+    public bool SelectedByDefault { get; init; } = true;
+
     /// <summary>False = close for Game Mode but never bring it back.</summary>
     public bool Relaunch { get; init; } = true;
     public string? Note { get; init; }

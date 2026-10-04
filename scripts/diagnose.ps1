@@ -86,12 +86,12 @@ Write-Section "POWER PLAN & BATTERY" $powerBlock
 # 1b. REAL-TIME CPU SAMPLE (per-process, not cumulative)
 # -------------------------------------------------------------------
 try {
-    $cpuSample = Get-Counter '\Process(*)\% Processor Time' -SampleInterval 1 -MaxSamples 2 -ErrorAction Stop
+    $cpuSample = Get-Counter '\Process(*)\% Processor Time', '\Processor(_Total)\% Processor Time' -SampleInterval 1 -MaxSamples 2 -ErrorAction Stop
     $logicalCores = (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum
     if (-not $logicalCores) { $logicalCores = 1 }
 
     $latest = $cpuSample[-1].CounterSamples |
-        Where-Object { $_.InstanceName -and $_.InstanceName -notin @('_total','idle') } |
+        Where-Object { $_.Path -like '*\process(*' -and $_.InstanceName -and $_.InstanceName -notin @('_total','idle') } |
         Sort-Object CookedValue -Descending |
         Select-Object -First 15 |
         ForEach-Object {
@@ -101,8 +101,8 @@ try {
             }
         }
 
-    $totalCounter = $cpuSample[-1].CounterSamples | Where-Object { $_.InstanceName -eq '_total' }
-    $totalPct = if ($totalCounter) { [math]::Round($totalCounter.CookedValue / $logicalCores, 1) } else { 'n/a' }
+    $totalCounter = $cpuSample[-1].CounterSamples | Where-Object { $_.Path -like '*\processor(_total)*' }
+    $totalPct = if ($totalCounter) { [math]::Round($totalCounter.CookedValue, 1) } else { 'n/a' }
 
     $cpuRealtime = "System-wide CPU at sample: $totalPct%`n`n" + ($latest | Format-Table -AutoSize | Out-String)
 } catch {

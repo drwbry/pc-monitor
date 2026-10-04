@@ -101,9 +101,9 @@ public class GameModePlannerTests
     [Fact]
     public void PlanEnter_NeverIncludesProtectedItems()
     {
-        var procs = new List<ProcessInfo> { P(5, 1, "Discord"), P(6, 1, "ThrottleStop") };
+        var procs = new List<ProcessInfo> { P(5, 1, "steam"), P(6, 1, "ThrottleStop") };
         var cfg = Config(
-            new GameModeItem { Id = "d", DisplayName = "Discord", ProcessNames = ["discord"] },
+            new GameModeItem { Id = "d", DisplayName = "Steam", ProcessNames = ["STEAM"] },
             new GameModeItem { Id = "t", DisplayName = "TS", ProcessNames = ["ThrottleStop"] },
             new GameModeItem { Id = "s", DisplayName = "Defender", Kind = GameModeItemKind.Service, ServiceName = "WinDefend" });
 
@@ -354,5 +354,35 @@ public class GameModeBlankAppIdTests
 
         GameModePlanner.PlanEnter(new GameModeConfig { Items = { item } }, procs, _ => false)
             .Single().Launch.Should().Be(new LaunchSpec(null, @"C:\G\Granola.exe", "--hidden"));
+    }
+}
+
+public class GameModeOptionalItemTests
+{
+    [Fact]
+    public void Defaults_ChromeDiscordSpotify_AreOptionalAndEverythingElseIsNot()
+    {
+        var items = GameModeDefaults.Create().Items;
+        items.Where(i => !i.SelectedByDefault).Select(i => i.Id).Should().BeEquivalentTo("chrome", "discord", "spotify");
+        items.Where(i => !i.SelectedByDefault).Should().NotContain(i => GameModePlanner.IsProtected(i));
+    }
+
+    [Fact]
+    public void SelectedByDefault_SurvivesJsonRoundTripAndDefaultsToTrueWhenOmitted()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pcmon-gm-opt-" + Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var cfgPath = Path.Combine(dir, "gamemode.json");
+            File.WriteAllText(cfgPath, """
+                { "Items": [
+                  { "Id": "a", "DisplayName": "A", "ProcessNames": ["a"] },
+                  { "Id": "b", "DisplayName": "B", "ProcessNames": ["b"], "SelectedByDefault": false } ] }
+                """);
+            var cfg = new GameModeService(new FakeSystem(), cfgPath, Path.Combine(dir, "s.json")).LoadConfig();
+            cfg.Items.Select(i => i.SelectedByDefault).Should().Equal(true, false);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
     }
 }
