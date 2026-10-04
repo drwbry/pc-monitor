@@ -118,6 +118,7 @@ public partial class GameModeDialogViewModel : ObservableObject
 
     private async Task ConfirmAsync()
     {
+        var dryRun = DryRun;
         IsRunning = true;
         Status = Exiting ? "Starting things back up..." : "Closing...";
         void Log(string line) => Application.Current.Dispatcher.Invoke(() => Lines.Add(line));
@@ -127,14 +128,14 @@ public partial class GameModeDialogViewModel : ObservableObject
             if (Exiting)
             {
                 var items = selected.Select(r => r.Stopped!).ToList();
-                await Task.Run(() => _svc.ExitAsync(items, DryRun, Log));
-                Status = DryRun ? "Dry run finished. Nothing was changed." : "Game Mode is off.";
+                await Task.Run(() => _svc.ExitAsync(items, dryRun, Log));
+                Status = dryRun ? DryRunDone : "Game Mode is off.";
             }
             else
             {
                 var items = selected.Select(r => r.Planned!).ToList();
-                await Task.Run(() => _svc.EnterAsync(items, DryRun, Log));
-                Status = DryRun ? "Dry run finished. Nothing was changed." : "Game Mode is on. Have fun.";
+                await Task.Run(() => _svc.EnterAsync(items, dryRun, Log));
+                Status = dryRun ? DryRunDone : "Game Mode is on. Have fun.";
             }
         }
         catch (Exception ex)
@@ -144,9 +145,13 @@ public partial class GameModeDialogViewModel : ObservableObject
         finally
         {
             IsRunning = false;
-            IsDone = true;
+            // After a dry run, stay on the same list so a real run is one more click.
+            if (dryRun) DryRun = false;
+            else IsDone = true;
         }
     }
+
+    private const string DryRunDone = "Dry run finished. Nothing was changed. Confirm again to do it for real.";
 
     partial void OnIsLoadingChanged(bool value) => OnEditableChanged();
     partial void OnIsRunningChanged(bool value) => OnEditableChanged();
