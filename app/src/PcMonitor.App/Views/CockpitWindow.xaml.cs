@@ -18,6 +18,7 @@ public partial class CockpitWindow : Window
         var vm = new CockpitViewModel(svc);
         DataContext = vm;
         vm.CaptureRequested += (_, kind) => OpenCaptureDialog(kind, vm, svc);
+        vm.GameModeRequested += (_, _) => ((App)Application.Current).ShowGameModeDialog();
         Closed += (_, _) => vm.Dispose();
     }
 

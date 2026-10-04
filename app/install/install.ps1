@@ -28,7 +28,7 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Copy-Item -Force $exe $installDir
 
 # Copy the companion scripts so the capture buttons work.
-$filesDir = Join-Path (Split-Path -Parent $root) "files"
+$filesDir = Join-Path (Split-Path -Parent $root) "scripts"
 New-Item -ItemType Directory -Force -Path $scriptsDest | Out-Null
 foreach ($name in @("diagnose.ps1", "live-probe.ps1", "collect-stats.ps1")) {
   $src = Join-Path $filesDir $name

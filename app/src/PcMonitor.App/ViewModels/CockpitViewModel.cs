@@ -23,11 +23,14 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _explainerCollapsed;
     [ObservableProperty] private bool _captureRunning;
     [ObservableProperty] private string? _tempBanner;
+    [ObservableProperty] private string _gameModeButtonText = "Game Mode";
 
     public IRelayCommand<string> CaptureCommand { get; }
     public IRelayCommand ToggleExplainerCommand { get; }
+    public IRelayCommand GameModeCommand { get; }
 
     public event EventHandler<CaptureKind>? CaptureRequested;
+    public event EventHandler? GameModeRequested;
 
     public CockpitViewModel(Services svc)
     {
@@ -50,6 +53,10 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
             svc.Settings.Current.ExplainerCollapsed = ExplainerCollapsed;
             svc.Settings.Save();
         });
+
+        GameModeCommand = new RelayCommand(() => GameModeRequested?.Invoke(this, EventArgs.Empty));
+        svc.GameMode.StateChanged += OnGameModeChanged;
+        UpdateGameModeText();
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Tick();
@@ -101,5 +108,15 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
     partial void OnCaptureRunningChanged(bool value) =>
         CaptureCommand.NotifyCanExecuteChanged();
 
-    public void Dispose() => _timer.Stop();
+    private void OnGameModeChanged(object? sender, EventArgs e) =>
+        System.Windows.Application.Current.Dispatcher.Invoke(UpdateGameModeText);
+
+    private void UpdateGameModeText() =>
+        GameModeButtonText = _svc.GameMode.IsActive ? "End Game Mode (ON)" : "Game Mode";
+
+    public void Dispose()
+    {
+        _timer.Stop();
+        _svc.GameMode.StateChanged -= OnGameModeChanged;
+    }
 }

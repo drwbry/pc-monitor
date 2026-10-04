@@ -49,6 +49,8 @@
                 Command="{Binding CaptureCommand}" CommandParameter="Diagnostic"/>
         <Button Content="Capture Live Probe (5s)" Margin="6" Padding="20,8" MinWidth="200"
                 Command="{Binding CaptureCommand}" CommandParameter="LiveProbe"/>
+        <Button Content="{Binding GameModeButtonText}" Margin="6" Padding="20,8" MinWidth="200"
+                Command="{Binding GameModeCommand}"/>
       </StackPanel>
     </Border>
 

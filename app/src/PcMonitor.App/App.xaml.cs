@@ -6,6 +6,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Forms;
 using PcMonitor.App.Composition;
+using PcMonitor.App.Views.Dialogs;
 
 namespace PcMonitor.App;
 
@@ -15,6 +16,7 @@ public partial class App : System.Windows.Application
     private const string PipeName = "MarshPcMonitor.Activate";
     private Mutex? _mutex;
     private NotifyIcon? _trayIcon;
+    private GameModeDialog? _gameModeDialog;
     public Services? Services { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -47,6 +49,9 @@ public partial class App : System.Windows.Application
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open", null, (_, _) => ShowMainWindow());
+        var gameMode = menu.Items.Add("", null, (_, _) => ShowGameModeDialog());
+        menu.Opening += (_, _) =>
+            gameMode.Text = Services!.GameMode.IsActive ? "End Game Mode..." : "Start Game Mode...";
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Shutdown());
 
@@ -58,6 +63,31 @@ public partial class App : System.Windows.Application
             Visible = true,
         };
         _trayIcon.DoubleClick += (_, _) => ShowMainWindow();
+        Services!.GameMode.StateChanged += (_, _) => Dispatcher.Invoke(UpdateTrayText);
+        UpdateTrayText();
+    }
+
+    private void UpdateTrayText()
+    {
+        if (_trayIcon is not null)
+            _trayIcon.Text = Services!.GameMode.IsActive ? "Marsh PC Monitor - Game Mode ON" : "Marsh PC Monitor";
+    }
+
+    /// <summary>Opens the Game Mode confirm list, or brings the open one to the front.</summary>
+    public void ShowGameModeDialog()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (_gameModeDialog is not null)
+            {
+                _gameModeDialog.Activate();
+                return;
+            }
+            _gameModeDialog = new GameModeDialog(Services!.GameMode);
+            _gameModeDialog.Closed += (_, _) => _gameModeDialog = null;
+            _gameModeDialog.Show();
+            _gameModeDialog.Activate();
+        });
     }
 
     public void ShowMainWindow()

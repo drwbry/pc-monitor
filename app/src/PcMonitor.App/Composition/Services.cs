@@ -1,4 +1,5 @@
 using PcMonitor.Core.Capture;
+using PcMonitor.Core.GameMode;
 using PcMonitor.Core.History;
 using PcMonitor.Core.Issues;
 using PcMonitor.Core.Issues.Rules;
@@ -12,6 +13,7 @@ public sealed class Services : IDisposable
     public IssueEvaluator Issues { get; }
     public ICaptureService Capture { get; }
     public HourlyHistoryReader History { get; }
+    public GameModeService GameMode { get; }
     public Settings.SettingsStore Settings { get; } = new();
 
     public Services()
@@ -37,6 +39,8 @@ public sealed class Services : IDisposable
             new DiskQueueElevatedRule(),
         });
         Capture = new CaptureService(new PowerShellProcessRunner(), Paths.ScriptsFolder, Paths.SysLogsRoot);
+        GameMode = new GameModeService(
+            new WindowsGameModeSystem(Paths.GameModeLaunchersFolder), Paths.GameModeConfigFile, Paths.GameModeStateFile);
     }
 
     public void Dispose()
