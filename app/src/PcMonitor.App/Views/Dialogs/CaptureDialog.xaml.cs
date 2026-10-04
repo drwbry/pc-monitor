@@ -12,6 +12,7 @@ public partial class CaptureDialog : Window
     public CaptureDialog(ICaptureService capture, CaptureKind kind)
     {
         InitializeComponent();
+        Theming.DarkTitleBar.Attach(this);
         _vm = new CaptureDialogViewModel(capture, kind);
         DataContext = _vm;
         Closed += (_, _) => _vm.Dispose();

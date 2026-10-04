@@ -9,6 +9,7 @@ public partial class GameModeDialog : Window
     public GameModeDialog(GameModeService svc)
     {
         InitializeComponent();
+        Theming.DarkTitleBar.Attach(this);
         var vm = new GameModeDialogViewModel(svc);
         DataContext = vm;
         Loaded += async (_, _) => await vm.LoadAsync();

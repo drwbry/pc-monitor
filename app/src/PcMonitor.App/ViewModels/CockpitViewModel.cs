@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PcMonitor.App.Composition;
+using PcMonitor.App.Theming;
 using PcMonitor.Core.Models;
 
 namespace PcMonitor.App.ViewModels;
@@ -18,8 +19,13 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
     public ObservableCollection<IssueCardViewModel> Issues { get; } = new();
 
     [ObservableProperty] private string _healthLabel = "All clear";
-    [ObservableProperty] private System.Windows.Media.Brush _healthBrush =
-        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3F, 0xB9, 0x50));
+    [ObservableProperty] private System.Windows.Media.Brush _healthBrush = Palette.Good;
+    [ObservableProperty] private System.Windows.Media.Brush _healthTint = Palette.GoodTint;
+    [ObservableProperty] private bool _gameModeActive;
+    [ObservableProperty] private bool _hasIssues;
+
+    public string VersionText { get; } =
+        "v" + (System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "?");
     [ObservableProperty] private bool _explainerCollapsed;
     [ObservableProperty] private bool _captureRunning;
     [ObservableProperty] private string? _tempBanner;
@@ -72,27 +78,14 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
             Live.Apply(snap);
             var active = _svc.Issues.Evaluate(snap);
 
-            Issues.Clear();
-            foreach (var i in active) Issues.Add(new IssueCardViewModel(i, now));
+            SyncIssues(active, now);
 
             if (active.Any(i => i.Severity == IssueSeverity.Red))
-            {
-                HealthLabel = "Problems";
-                HealthBrush = new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(0xF8, 0x51, 0x49));
-            }
+                SetHealth("Problems", Palette.Bad, Palette.BadTint);
             else if (active.Any(i => i.Severity == IssueSeverity.Yellow))
-            {
-                HealthLabel = "Issues";
-                HealthBrush = new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(0xD2, 0x99, 0x22));
-            }
+                SetHealth("Issues", Palette.Warn, Palette.WarnTint);
             else
-            {
-                HealthLabel = "All clear";
-                HealthBrush = new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(0x3F, 0xB9, 0x50));
-            }
+                SetHealth("All clear", Palette.Good, Palette.GoodTint);
         }
         catch (Exception ex)
         {
@@ -105,14 +98,40 @@ public partial class CockpitViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void SetHealth(string label, System.Windows.Media.Brush brush, System.Windows.Media.Brush tint)
+    {
+        HealthLabel = label;
+        HealthBrush = brush;
+        HealthTint = tint;
+    }
+
+    /// <summary>Keeps existing cards when the same issues are still active; only durations change.</summary>
+    private void SyncIssues(IReadOnlyList<IssueState> active, DateTimeOffset now)
+    {
+        var same = active.Count == Issues.Count && active.Select((a, i) => Issues[i].Matches(a)).All(m => m);
+        if (same)
+        {
+            for (var i = 0; i < active.Count; i++) Issues[i].Update(active[i], now);
+        }
+        else
+        {
+            Issues.Clear();
+            foreach (var i in active) Issues.Add(new IssueCardViewModel(i, now));
+        }
+        HasIssues = Issues.Count > 0;
+    }
+
     partial void OnCaptureRunningChanged(bool value) =>
         CaptureCommand.NotifyCanExecuteChanged();
 
     private void OnGameModeChanged(object? sender, EventArgs e) =>
         System.Windows.Application.Current.Dispatcher.Invoke(UpdateGameModeText);
 
-    private void UpdateGameModeText() =>
-        GameModeButtonText = _svc.GameMode.IsActive ? "End Game Mode (ON)" : "Game Mode";
+    private void UpdateGameModeText()
+    {
+        GameModeActive = _svc.GameMode.IsActive;
+        GameModeButtonText = GameModeActive ? "End Game Mode" : "Game Mode";
+    }
 
     public void Dispose()
     {

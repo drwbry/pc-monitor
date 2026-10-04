@@ -12,6 +12,7 @@ public partial class CockpitWindow : Window
     public CockpitWindow()
     {
         InitializeComponent();
+        Theming.DarkTitleBar.Attach(this);
         var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "?";
         Title = $"Marsh PC Monitor v{version}";
         var svc = ((App)Application.Current).Services!;

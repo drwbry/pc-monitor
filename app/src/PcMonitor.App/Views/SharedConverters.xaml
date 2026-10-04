@@ -5,5 +5,6 @@
   <conv:NullToCollapsedConverter x:Key="NullToCollapsed"/>
   <conv:InvertBoolConverter x:Key="InvertBool"/>
   <conv:BoolToVisibleConverter x:Key="BoolToVisible"/>
+  <conv:InvertBoolToVisibleConverter x:Key="InvertBoolToVisible"/>
   <conv:SeverityToBrushConverter x:Key="SeverityToBrush"/>
 </ResourceDictionary>

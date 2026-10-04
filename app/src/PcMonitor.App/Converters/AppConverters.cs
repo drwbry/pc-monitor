@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using PcMonitor.App.Theming;
 using PcMonitor.Core.Models;
 
 namespace PcMonitor.App.Converters;
@@ -26,13 +27,20 @@ public sealed class BoolToVisibleConverter : IValueConverter
     public object ConvertBack(object v, Type t, object? p, CultureInfo c) => throw new NotSupportedException();
 }
 
+public sealed class InvertBoolToVisibleConverter : IValueConverter
+{
+    public object Convert(object? v, Type t, object? p, CultureInfo c)
+        => (bool)(v ?? false) ? Visibility.Collapsed : Visibility.Visible;
+    public object ConvertBack(object v, Type t, object? p, CultureInfo c) => throw new NotSupportedException();
+}
+
 public sealed class SeverityToBrushConverter : IValueConverter
 {
     public object Convert(object? v, Type t, object? p, CultureInfo c) => v switch
     {
-        IssueSeverity.Red => (Brush)new SolidColorBrush(Color.FromRgb(0xF8, 0x51, 0x49)),
-        IssueSeverity.Yellow => new SolidColorBrush(Color.FromRgb(0xD2, 0x99, 0x22)),
-        _ => Brushes.Gray,
+        IssueSeverity.Red => Palette.Bad,
+        IssueSeverity.Yellow => Palette.Warn,
+        _ => Palette.Muted,
     };
     public object ConvertBack(object v, Type t, object? p, CultureInfo c) => throw new NotSupportedException();
 }

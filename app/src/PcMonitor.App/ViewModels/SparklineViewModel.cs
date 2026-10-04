@@ -1,15 +1,20 @@
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using PcMonitor.App.Theming;
 using PcMonitor.Core.History;
 
 namespace PcMonitor.App.ViewModels;
 
+/// <summary>24h trend charts built from the hourly snapshots. Rebuilt only when a new snapshot lands.</summary>
 public partial class SparklineViewModel : ObservableObject
 {
     private readonly IHistoryReader _history;
-    [ObservableProperty] private string _cpu = "";
-    [ObservableProperty] private string _ram = "";
-    [ObservableProperty] private string _errors = "";
+    [ObservableProperty] private SparkPoints _cpu = SparkPoints.Empty;
+    [ObservableProperty] private SparkPoints _ram = SparkPoints.Empty;
+    [ObservableProperty] private SparkPoints _errors = SparkPoints.Empty;
+    [ObservableProperty] private string _cpuSummary = "";
+    [ObservableProperty] private string _ramSummary = "";
+    [ObservableProperty] private string _errorsSummary = "";
     [ObservableProperty] private bool _available;
 
     public SparklineViewModel(IHistoryReader history)
@@ -25,24 +30,16 @@ public partial class SparklineViewModel : ObservableObject
         Available = data.Count > 0;
         if (!Available) return;
         var ordered = data.OrderBy(e => e.Timestamp).TakeLast(24).ToList();
-        Cpu = Spark(ordered.Select(e => e.CpuPercent ?? 0));
-        Ram = Spark(ordered.Select(e => e.RamUsedGb ?? 0));
-        Errors = Spark(ordered.Select(e => (double)((e.SystemErrorsLastHour ?? 0) + (e.AppErrorsLastHour ?? 0))));
-    }
 
-    private static string Spark(IEnumerable<double> values)
-    {
-        const string blocks = "▁▂▃▄▅▆▇█";
-        var list = values.ToList();
-        if (list.Count == 0) return "";
-        var min = list.Min(); var max = list.Max();
-        var range = Math.Max(0.001, max - min);
-        var sb = new System.Text.StringBuilder(list.Count);
-        foreach (var v in list)
-        {
-            var idx = (int)Math.Round((v - min) / range * (blocks.Length - 1));
-            sb.Append(blocks[Math.Clamp(idx, 0, blocks.Length - 1)]);
-        }
-        return sb.ToString();
+        var cpu = ordered.Select(e => e.CpuPercent ?? 0).ToList();
+        var ram = ordered.Select(e => e.RamUsedGb ?? 0).ToList();
+        var errors = ordered.Select(e => (double)((e.SystemErrorsLastHour ?? 0) + (e.AppErrorsLastHour ?? 0))).ToList();
+
+        Cpu = SparkPoints.Build(cpu, 0, 100);
+        Ram = SparkPoints.Build(ram, 0, 1);
+        Errors = SparkPoints.Build(errors, 0, 1);
+        CpuSummary = $"avg {cpu.Average():F0}%  ·  peak {cpu.Max():F0}%";
+        RamSummary = $"avg {ram.Average():F1} GB  ·  peak {ram.Max():F1} GB";
+        ErrorsSummary = $"{errors.Sum():F0} total  ·  worst hour {errors.Max():F0}";
     }
 }
