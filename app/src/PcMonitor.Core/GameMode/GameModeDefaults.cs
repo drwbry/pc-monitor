@@ -38,6 +38,11 @@ public static class GameModeDefaults
                 Id = "onedrive", DisplayName = "OneDrive",
                 ProcessNames = ["OneDrive"], CloseArgs = "/shutdown",
             },
+            new GameModeItem
+            {
+                Id = "teams", DisplayName = "Microsoft Teams",
+                ProcessNames = ["ms-teams"], AppId = "MSTeams_8wekyb3d8bbwe!MSTeams",
+            },
             // Optional: shown in their own section, unchecked, because they're often used while gaming.
             new GameModeItem
             {
