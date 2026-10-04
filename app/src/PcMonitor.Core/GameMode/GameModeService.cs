@@ -19,6 +19,7 @@ public sealed class GameModeService
     private readonly GameModeRunner _runner;
     private readonly string _configPath;
     private readonly string _statePath;
+    private readonly string? _logPath;
 
     public GameModeState State { get; private set; } = new();
     public bool IsActive => State.Active;
@@ -26,8 +27,10 @@ public sealed class GameModeService
     public string ConfigPath => _configPath;
     public event EventHandler? StateChanged;
 
-    public GameModeService(IGameModeSystem sys, string configPath, string statePath)
+    /// <param name="logPath">Optional run log (gamemode.log) so a session can be diagnosed afterwards.</param>
+    public GameModeService(IGameModeSystem sys, string configPath, string statePath, string? logPath = null)
     {
+        _logPath = logPath;
         _sys = sys;
         _runner = new GameModeRunner(sys);
         _configPath = configPath;
@@ -63,8 +66,12 @@ public sealed class GameModeService
     public IReadOnlyList<StoppedItem> PlanExit() =>
         GameModePlanner.PlanExit(State, _sys.GetProcesses(), _sys.IsServiceRunning);
 
+    public IReadOnlyList<StoppedItem> AlreadyRunning() =>
+        GameModePlanner.AlreadyRunning(State, _sys.GetProcesses(), _sys.IsServiceRunning);
+
     public async Task EnterAsync(IReadOnlyList<PlannedItem> selected, bool dryRun, Action<string> log)
     {
+        log = Tee(log, $"Start Game Mode{(dryRun ? " (dry run)" : "")}: {Names(selected.Select(p => p.Item))}");
         var stopped = await _runner.EnterAsync(selected, dryRun, log);
         if (dryRun) return;
         SetState(new GameModeState { Active = true, EnteredAt = DateTimeOffset.Now, Stopped = stopped.ToList() });
@@ -73,9 +80,40 @@ public sealed class GameModeService
     /// <summary>Starts the selected items. Unselected items are dropped: the user chose not to bring them back.</summary>
     public async Task ExitAsync(IReadOnlyList<StoppedItem> selected, bool dryRun, Action<string> log)
     {
+        var skipped = AlreadyRunning();
+        log = Tee(log, $"End Game Mode{(dryRun ? " (dry run)" : "")}: {Names(selected.Select(s => s.Item))}"
+                       + (skipped.Count > 0 ? $" | already running: {Names(skipped.Select(s => s.Item))}" : ""));
         await _runner.ExitAsync(selected, dryRun, log);
         if (dryRun) return;
         SetState(new GameModeState());
+    }
+
+    private static string Names(IEnumerable<GameModeItem> items)
+    {
+        var list = items.Select(i => i.DisplayName).ToList();
+        return list.Count == 0 ? "(nothing)" : string.Join(", ", list);
+    }
+
+    /// <summary>Wraps the UI log so every line also lands in gamemode.log with a timestamp.</summary>
+    private Action<string> Tee(Action<string> log, string header)
+    {
+        Append($"=== {header}");
+        return line =>
+        {
+            Append(line);
+            log(line);
+        };
+    }
+
+    private void Append(string line)
+    {
+        if (_logPath is null) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
+            File.AppendAllText(_logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     private void SetState(GameModeState state)

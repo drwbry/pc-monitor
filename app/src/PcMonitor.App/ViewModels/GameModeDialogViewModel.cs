@@ -47,6 +47,8 @@ public partial class GameModeDialogViewModel : ObservableObject
     [ObservableProperty] private string? _status;
     [ObservableProperty] private string? _configError;
     [ObservableProperty] private string _totalText = "";
+    /// <summary>Exit only: things Game Mode closed that are already back, so they aren't listed.</summary>
+    [ObservableProperty] private string? _skippedText;
 
     public bool IsEditable => !IsLoading && !IsRunning && !IsDone;
 
@@ -69,6 +71,10 @@ public partial class GameModeDialogViewModel : ObservableObject
             if (Exiting)
             {
                 var plan = await Task.Run(_svc.PlanExit);
+                var skipped = await Task.Run(_svc.AlreadyRunning);
+                if (skipped.Count > 0)
+                    SkippedText = "Already running again, so not listed: "
+                                  + string.Join(", ", skipped.Select(s => s.Item.DisplayName));
                 foreach (var s in plan)
                     AddRow(new GameModeRowViewModel { Name = s.Item.DisplayName, Note = s.Item.Note, Stopped = s });
                 if (plan.Count == 0)

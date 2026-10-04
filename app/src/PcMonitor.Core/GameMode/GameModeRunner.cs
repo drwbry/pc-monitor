@@ -10,6 +10,7 @@ public sealed class GameModeRunner
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan GracefulCloseWait = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan VerifyWait = TimeSpan.FromSeconds(20);
 
     private readonly IGameModeSystem _sys;
 
@@ -54,7 +55,38 @@ public sealed class GameModeRunner
                 log($"FAILED to stop {item.DisplayName}: {ex.Message}");
             }
         }
+        if (!dryRun && stopped.Count > 0) await VerifyStoppedAsync(stopped, log);
         return stopped;
+    }
+
+    /// <summary>
+    /// Re-checks everything that was stopped. VMs take a few seconds to wind down, so poll for a while
+    /// before warning about anything still alive.
+    /// </summary>
+    private async Task VerifyStoppedAsync(IReadOnlyList<StoppedItem> stopped, Action<string> log)
+    {
+        var waited = TimeSpan.Zero;
+        while (true)
+        {
+            var procs = _sys.GetProcesses();
+            var alive = stopped
+                .Select(s => (s.Item, Left: GameModePlanner.Leftovers(s.Item, procs, _sys.IsServiceRunning)))
+                .Where(x => x.Left.Count > 0)
+                .ToList();
+            if (alive.Count == 0)
+            {
+                log("Verified: everything selected is closed.");
+                return;
+            }
+            if (waited >= VerifyWait)
+            {
+                foreach (var (item, left) in alive)
+                    log($"WARNING: {item.DisplayName} still running after {VerifyWait.TotalSeconds:N0}s: {string.Join(", ", left)}");
+                return;
+            }
+            await _sys.DelayAsync(TimeSpan.FromSeconds(1));
+            waited += TimeSpan.FromSeconds(1);
+        }
     }
 
     public async Task ExitAsync(IReadOnlyList<StoppedItem> selected, bool dryRun, Action<string> log)

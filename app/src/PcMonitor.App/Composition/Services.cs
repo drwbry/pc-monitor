@@ -40,7 +40,8 @@ public sealed class Services : IDisposable
         });
         Capture = new CaptureService(new PowerShellProcessRunner(), Paths.ScriptsFolder, Paths.SysLogsRoot);
         GameMode = new GameModeService(
-            new WindowsGameModeSystem(Paths.GameModeLaunchersFolder), Paths.GameModeConfigFile, Paths.GameModeStateFile);
+            new WindowsGameModeSystem(Paths.GameModeLaunchersFolder), Paths.GameModeConfigFile, Paths.GameModeStateFile,
+            Paths.GameModeLogFile);
     }
 
     public void Dispose()

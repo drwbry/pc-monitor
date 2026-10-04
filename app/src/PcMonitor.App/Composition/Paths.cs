@@ -12,5 +12,6 @@ public static class Paths
     public static string SettingsFile => Path.Combine(AppDataFolder, "settings.json");
     public static string GameModeConfigFile => Path.Combine(AppDataFolder, "gamemode.json");
     public static string GameModeStateFile => Path.Combine(AppDataFolder, "gamemode-state.json");
+    public static string GameModeLogFile => Path.Combine(AppDataFolder, "gamemode.log");
     public static string GameModeLaunchersFolder => Path.Combine(AppDataFolder, "launchers");
 }

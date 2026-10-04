@@ -69,6 +69,36 @@ public static class GameModePlanner
             .ToList();
     }
 
+    /// <summary>Items Game Mode closed that are already running again (e.g. opening Claude restarts WSL).</summary>
+    public static IReadOnlyList<StoppedItem> AlreadyRunning(
+        GameModeState state, IReadOnlyList<ProcessInfo> procs, Func<string, bool> isServiceRunning) =>
+        state.Stopped.Where(s => s.Item.Relaunch && IsRunning(s.Item, procs, isServiceRunning)).ToList();
+
+    /// <summary>
+    /// What is still alive for an item that was just stopped: its own processes, a still-running
+    /// service, or memory processes left behind (a VM service can stop while its vmmem lives on).
+    /// Empty when the item is fully gone.
+    /// </summary>
+    public static IReadOnlyList<string> Leftovers(
+        GameModeItem item, IReadOnlyList<ProcessInfo> procs, Func<string, bool> isServiceRunning)
+    {
+        var left = new List<string>();
+        if (item.Kind == GameModeItemKind.Service && item.ServiceName is not null && isServiceRunning(item.ServiceName))
+            left.Add($"service {item.ServiceName}");
+        if (item.Kind == GameModeItemKind.App && FindRoots(item, procs).Count > 0)
+            left.AddRange(item.ProcessNames);
+        var names = item.Kind == GameModeItemKind.Command
+            ? item.DetectProcessNames.Concat(item.MemoryProcessNames)
+            : item.MemoryProcessNames;
+        foreach (var n in names.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var bytes = procs.Where(p => p.Name.Equals(n, StringComparison.OrdinalIgnoreCase)).Sum(p => p.PrivateBytes);
+            if (procs.Any(p => p.Name.Equals(n, StringComparison.OrdinalIgnoreCase)))
+                left.Add($"{n} ({bytes / (1024 * 1024):N0} MB)");
+        }
+        return left;
+    }
+
     public static bool IsRunning(GameModeItem item, IReadOnlyList<ProcessInfo> procs, Func<string, bool> isServiceRunning) =>
         item.Kind switch
         {

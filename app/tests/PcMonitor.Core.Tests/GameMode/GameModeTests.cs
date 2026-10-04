@@ -386,3 +386,67 @@ public class GameModeOptionalItemTests
         finally { try { Directory.Delete(dir, true); } catch { } }
     }
 }
+
+public class GameModeVerificationTests
+{
+    private static readonly GameModeItem Cowork = new()
+    {
+        Id = "vm", DisplayName = "Claude Cowork VM", Kind = GameModeItemKind.Service,
+        ServiceName = "CoworkVMService", MemoryProcessNames = ["vmmem"],
+    };
+
+    [Fact]
+    public async Task Enter_ServiceStopsButVmmemLivesOn_IsReportedAsWarning()
+    {
+        var sys = new FakeSystem();
+        sys.RunningServices.Add("CoworkVMService");
+        sys.Processes.Add(new ProcessInfo(7, 0, "vmmem", null, null, 4100L * 1024 * 1024));
+        var logs = new List<string>();
+
+        await new GameModeRunner(sys).EnterAsync([new PlannedItem(Cowork, 0, null)], false, logs.Add);
+
+        logs.Should().Contain(l => l.StartsWith("WARNING: Claude Cowork VM still running") && l.Contains("vmmem (4,100 MB)"));
+    }
+
+    [Fact]
+    public async Task Enter_EverythingGone_IsVerified()
+    {
+        var sys = new FakeSystem();
+        sys.RunningServices.Add("CoworkVMService");
+        var logs = new List<string>();
+
+        await new GameModeRunner(sys).EnterAsync([new PlannedItem(Cowork, 0, null)], false, logs.Add);
+
+        logs.Should().Equal("Stopped Claude Cowork VM", "Verified: everything selected is closed.");
+    }
+
+    [Fact]
+    public async Task Service_ReportsAlreadyRunningItems_AndWritesRunLog()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pcmon-gm-log-" + Guid.NewGuid());
+        try
+        {
+            var sys = new FakeSystem();
+            sys.RunningServices.Add("CoworkVMService");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "gamemode.json"), """
+                { "Items": [ { "Id": "vm", "DisplayName": "Claude Cowork VM", "Kind": "Service", "ServiceName": "CoworkVMService" } ] }
+                """);
+            var logPath = Path.Combine(dir, "gamemode.log");
+            var svc = new GameModeService(sys, Path.Combine(dir, "gamemode.json"), Path.Combine(dir, "s.json"), logPath);
+
+            await svc.EnterAsync(svc.PlanEnter(), false, _ => { });
+            sys.RunningServices.Add("CoworkVMService"); // e.g. reopening Claude restarted it
+
+            svc.PlanExit().Should().BeEmpty();
+            svc.AlreadyRunning().Select(s => s.Item.Id).Should().Equal("vm");
+
+            await svc.ExitAsync(svc.PlanExit(), false, _ => { });
+            var log = File.ReadAllText(logPath);
+            log.Should().Contain("=== Start Game Mode: Claude Cowork VM")
+               .And.Contain("Stopped Claude Cowork VM")
+               .And.Contain("=== End Game Mode: (nothing) | already running: Claude Cowork VM");
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+}

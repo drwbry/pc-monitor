@@ -42,6 +42,8 @@
       <TextBlock Text="{Binding Heading}" TextWrapping="Wrap" Opacity="0.85"/>
       <TextBlock Text="{Binding ConfigError}" TextWrapping="Wrap" Foreground="#D29922" Margin="0,6,0,0"
                  Visibility="{Binding ConfigError, Converter={StaticResource NullToCollapsed}}"/>
+      <TextBlock Text="{Binding SkippedText}" TextWrapping="Wrap" Margin="0,6,0,0" Opacity="0.7"
+                 Visibility="{Binding SkippedText, Converter={StaticResource NullToCollapsed}}"/>
       <TextBlock Text="Reading running apps..." Margin="0,6,0,0" Opacity="0.7"
                  Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisible}}"/>
     </StackPanel>
