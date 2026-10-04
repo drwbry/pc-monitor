@@ -60,10 +60,18 @@ public static class HourlyJsonParser
         }
     }
 
+    /// <summary>
+    /// collect-stats.ps1 writes "yyyy-MM-dd_HH-mm" (local time, no offset); ISO 8601 is also accepted.
+    /// </summary>
     private static DateTimeOffset? GetTimestamp(JsonElement el)
     {
-        if (el.TryGetProperty("timestamp", out var ts) &&
-            DateTimeOffset.TryParse(ts.GetString(), out var dto))
+        if (!el.TryGetProperty("timestamp", out var ts) || ts.ValueKind != JsonValueKind.String) return null;
+        var text = ts.GetString();
+        if (DateTime.TryParseExact(text, "yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeLocal, out var local))
+            return new DateTimeOffset(local);
+        if (DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var dto))
             return dto;
         return null;
     }

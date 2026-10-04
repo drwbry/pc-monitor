@@ -87,4 +87,25 @@ public class HourlyJsonParserTests
     {
         HourlyJsonParser.Parse("""{ "cpu_load_pct": 5 }""").Should().BeNull();
     }
+
+    /// <summary>The real collector (collect-stats.ps1) writes "yyyy-MM-dd_HH-mm" in local time, not ISO 8601.</summary>
+    [Fact]
+    public void Parse_CollectorTimestampFormat_IsAccepted()
+    {
+        const string json = """
+            {
+              "schema_version": 3,
+              "timestamp": "2026-10-04_14-54",
+              "cpu_load_pct": 25,
+              "ram": { "total_gb": 31.71, "free_gb": 11.43, "used_pct": 64 }
+            }
+            """;
+
+        var entry = HourlyJsonParser.Parse(json);
+
+        entry.Should().NotBeNull();
+        entry!.Timestamp.LocalDateTime.Should().Be(new DateTime(2026, 10, 4, 14, 54, 0));
+        entry.CpuPercent.Should().Be(25);
+        entry.RamUsedGb.Should().Be(20.28);
+    }
 }
