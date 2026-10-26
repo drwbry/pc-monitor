@@ -12,25 +12,25 @@ running as confirmation, not as an open question.
 
 ---
 
-## CURRENT STATE as of 2026-08-23 23:10 — read this first
+## CURRENT STATE as of 2026-08-25 15:53 — read this first
 
-The body below is the working record, written as things were learned, with three addenda
+The body below is the working record, written as things were learned, with five addenda
 appended in order. This block is the summary of where the machine actually ended up.
 
 ### Applied and verified
 
 | Setting | Performance | Battery |
 |---|---|---|
-| CPU Core / P Cache / E Cache offset | **-90.82 mV** (all three matched) | **-90.82 mV** (all three matched) |
-| Turbo Groups, 1-8 active cores | 54/54/52/52/52/52/52/52 | 54/54/52/52/52/52/52/50 |
+| CPU Core / P Cache / E Cache offset | **-100.59 mV trial** (all three matched; began 2026-08-25 15:52) | **-90.82 mV** (all three matched) |
+| Turbo Groups, 1-8 active cores | 54/54/52/52/52/52/52/52 | **50/50/50/50/50/50/50/50** |
 | Speed Shift EPP | 32 | 200 |
 | V-Max Stress | off | off |
 | Thermal Velocity Boost | on | **off** |
 | PROCHOT offset | 1 | 3 |
 
-- **Undervolt is live** — confirmed by two independent markers at the 11:30 reboot (TVB reason
-  codes appearing after zero occurrences in 23 prior days, plus a ~90 mV VID drop matching the
-  configured offset). See "The undervolt IS applying" below.
+- **The -90.82 mV undervolt has strong evidence of applying**, from the VID shift across the
+  11:30 BIOS-change reboot. A clean within-profile 0 mV / negative-offset A/B remains the best
+  definitive confirmation. Performance is now testing **-100.59 mV**; do not call it stable yet.
 - **OC mailbox is open** — `Turbo Overclocking: Unlimited`, no padlock, Turbo Groups editable.
 - **Plane mapping resolved** — indices 0/2/5 are Core / P Cache / E Cache; System Agent is
   index 4 and is untouched. The safety concern is cleared.
@@ -45,9 +45,10 @@ appended in order. This block is the summary of where the machine actually ended
 2. **The 100 C spikes are not fixed.** A spike still landed at 44 W / 9% C0% — at **MULTI 47.72,
    below the cap**, so a 54x cap can never clip these. Real relief needs a mid-40s multiplier,
    which is a genuine performance sacrifice. Undecided.
-3. **Undervolt stability is unvalidated.** -90.82 mV was never a known-good value (the Aug-8
-   test proved the offset never applied, so the chip has never run there). Validate at
-   idle/light load, not benches. Watch WHEA 124 and unexpected reboots.
+3. **-100.59 mV stability is unvalidated.** The Performance trial began at 15:52 on 08-25.
+   At the start of the trial there were no WHEA-Logger events or unexpected shutdowns since
+   the BIOS/undervolt change. Validate idle/light load, sleep/resume and ordinary applications,
+   not only benches. Battery remains at the prior -90.82 mV during this first validation arm.
 4. **TVB asymmetry** — on for profiles 0/1/2, off for Battery. Low stakes, but inherited rather
    than chosen.
 
@@ -64,7 +65,7 @@ Baselines to beat, from before the change:
 |---|---|---|
 | VID median @ MULTI>=46 | 1.3983-1.4160 (5 arms, 17.7 mV spread) | <=1.32 |
 | samples >=100 C | 0.89% (08-20), 0.85% (08-23) | materially lower |
-| WHEA 124 | 0 | **must stay 0** |
+| WHEA-Logger errors | 0 | **must stay 0** |
 
 **Compare like workloads.** 08-21 and 08-22 look cool (0.12%, 0.08%) mostly because the machine
 was doing less, not because it ran cooler.
@@ -275,23 +276,39 @@ in an all-core bench. Passing Cinebench proves very little here.
 
 - All-core bench (TS Bench / Cinebench) — necessary, not sufficient.
 - **Hours of ordinary light use and idle** — this is where an over-aggressive offset bites.
-- Check for machine-check exceptions after each step:
+- Check for machine-check exceptions and unexpected shutdowns after each step. Filter by
+  **provider**, not just event ID: event 124 from `Microsoft-Windows-Kernel-Boot` is unrelated,
+  and an ID-only query also mixes in unrelated Hyper-V events.
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='System'; Id=124,47,41} -MaxEvents 20 -EA SilentlyContinue |
-  Select TimeCreated, Id, ProviderName, Message | Format-List
+$since = (Get-Date).AddDays(-14)
+
+Get-WinEvent -FilterHashtable @{
+  LogName='System'
+  ProviderName='Microsoft-Windows-WHEA-Logger'
+  StartTime=$since
+} -EA SilentlyContinue | Select TimeCreated, Id, LevelDisplayName, Message | Format-List
+
+Get-WinEvent -FilterHashtable @{
+  LogName='System'
+  ProviderName='Microsoft-Windows-Kernel-Power'
+  Id=41
+  StartTime=$since
+} -EA SilentlyContinue | Select TimeCreated, Id, Message | Format-List
 ```
 
-**Any WHEA 124 means back off 10 mV immediately.** A silent reboot with Event 41 and no
-clean shutdown counts as a failure too.
+**Any new WHEA-Logger hardware error means back off immediately.** A silent reboot with a new
+Kernel-Power 41 and no clean-shutdown explanation counts as a failure too.
 
-### The degradation caveat still stands
+### Correction: do not frame this as desktop Vmin-shift mitigation
 
-The i9-14900HX is an affected Raptor Lake SKU. Vmin-shift degradation is real, cumulative
-and permanent. Undervolting *reduces* that stress, so it is on the right side of the
-ledger — but a chip that has been running at stock voltage through the whole degradation
-window may have less margin than a fresh one. That is another reason to start at −50 mV
-and walk down rather than jumping to −90.
+Intel's stated position is that 13th/14th Gen **mobile processors, including HX parts such as
+the i9-14900HX, are not exposed to the desktop Vmin Shift Instability issue**. The earlier
+claim that this CPU is an affected SKU was wrong. The undervolt is still useful for efficiency,
+temperature and performance headroom, but not as a remedy for a degradation mechanism Intel
+says does not affect this mobile SKU.
+
+Intel source: https://community.intel.com/t5/Mobile-and-Desktop-Processors/Need-Help-on-CPU-Instability/m-p/1732697
 
 **Unchanged regardless of how any of this lands: do not roll back the BIOS, and do not use
 BIOS mod/unlock tools.** That trade was bad when undervolting was impossible and it is
@@ -399,18 +416,19 @@ Also leftover and worth a deliberate decision rather than drift:
 
 ---
 
-## Step 5 — The Game profile is a trap; fix it before you use it
+## Step 5 — Game remains unused; its voltage warning is now stale
 
-You have never used the stock Game profile. It is currently the worst possible gaming config:
+The original warning below was accurate when written:
 
 ```
 NoSetPL=0x6          -> bit 1 set: Game writes NO power limit, defers to the Lenovo EC's full power
-FIVRVoltage01=0x00000000, UnlockVoltage01=0   -> Game has NO undervolt
+FIVRVoltage01=0x00000000, UnlockVoltage01=0   -> Game had NO undervolt
 ```
 
-**Maximum power with zero voltage headroom** — precisely the PROCHOT recipe. (Its being
-untouched is exactly what made it the clean control arm for the A/B, which is why it is
-still in that state.)
+That voltage state has since changed. As of 2026-08-25, Game carries the same -90.82 mV
+Core / P Cache / E Cache requests as the prior Performance setting, so "maximum power with
+zero voltage headroom" is no longer true. It still has stock 58/58/52... ratios and still
+defers power limits to the Lenovo EC. Since it is unused, no action is required.
 
 If you build a Gaming profile on it: give it an **explicit, thermally validated PL**, and
 apply the **same validated undervolt** as Performance. Do not let it run uncapped.
@@ -441,7 +459,7 @@ awk 'NR>1&&NF>=11{t=$7+0;n++;s+=t;if(t>=100)a++;if(t>=95)b++;
 | VID median @ MULTI≥48 | ~1.40 | ≤1.32 (a real −80 mV) |
 | ≥100 °C samples | 0.87% (08-23) | materially lower |
 | TEMP throttle reasons | 370/day (08-23) | materially lower |
-| WHEA 124 | 0 | **must stay 0** |
+| WHEA-Logger errors | 0 | **must stay 0** |
 
 Do not compare a light day against a heavy one — 08-21 and 08-22 look cool (0.12%, 0.08%
 ≥100 °C) mostly because the machine was doing less. Compare like workloads, or compare a
@@ -631,8 +649,9 @@ The advice to let microcode handle it is sound, and it is now measured rather th
 VMAX throttling fires almost exclusively on AC, where the checkbox was *not* set. So the
 voltage ceiling is being enforced by firmware/microcode independently of TS's checkbox —
 which is exactly the "let the microcode handle it" case. Turning it off changes nothing the
-platform was not already doing, and on a Raptor Lake part under the 0x133 Vmin-shift
-mitigations, deferring to microcode is the conservative choice.
+platform was not already doing. With the current BIOS/microcode voltage safeguards, deferring
+to firmware here is the conservative choice. This is separate from the desktop Vmin-shift
+issue, which Intel says does not affect mobile HX parts.
 
 ### Observation, for information only — no action indicated
 
@@ -647,9 +666,9 @@ low power (8-47 W)**.
 ```
 
 That is VID read from one core briefly touching its max ratio while the rest idle — the top
-of the V/f curve at **low current**, which is the least damaging form. Vmin-shift degradation
-is driven by high voltage *combined* with sustained current and heat, which this is not.
-Across the whole set, `VID > 1.45 V` occurs in 4.16% of samples at an average of 30.4 W.
+of the V/f curve at **low current**. It is not comparable to sustaining both high voltage and
+high package current, and it does not establish degradation. Across the whole set,
+`VID > 1.45 V` occurs in 4.16% of samples at an average of 30.4 W.
 
 Also note the July figure of "VID max 1.5042 V" came from a **621-sample, 10-minute window**
 versus **412,490 samples** here. A higher observed maximum over 660x more samples is a
@@ -721,4 +740,83 @@ burst only if there's appetite to chase the last ~2%.
 
 **Takeaway for daily use:** for any future tuning/verification work, always do it on the 330 W
 brick. The 65 W charger will always show reduced boost by design - don't mistake it for a
-regression.
+regression. The agreed policy is:
+
+| Power source | Lenovo Legion Toolkit | ThrottleStop |
+|---|---|---|
+| 330 W brick | Performance | Performance |
+| 65 W / low-wattage AC | Balance | Performance |
+| Truly on battery | Quiet | Battery |
+
+This two-profile ThrottleStop policy is sound: EPP 32 keeps AC responsive while the Lenovo EC
+still enforces the adapter-aware ceiling. It must **not** be justified by assuming battery
+assist, however. During the known 65 W pinned burst, all 37 samples had `BAT_mW=0`; the CPU
+was held to 20.5 W average / 24.5 W maximum and EDP fired in 32/37 samples. The platform chose
+to cap the CPU instead of borrowing from the battery. Battery assist under some other combined
+CPU+GPU transient remains possible but unproven and should not be part of the power budget.
+
+---
+
+## Addendum 5 — 2026-08-25 15:52: -100.59 mV Performance validation trial started
+
+### Exact applied state
+
+ThrottleStop saved the new Performance offsets at 15:52:43:
+
+```ini
+FIVRVoltage00=0xF3200000   # CPU Core, Performance: -100.59 mV
+FIVRVoltage20=0xF3200000   # CPU P Cache, Performance: -100.59 mV
+FIVRVoltage50=0xF3200000   # CPU E Cache, Performance: -100.59 mV
+
+FIVRVoltage03=0xF4600000   # Battery remains -90.82 mV
+FIVRVoltage23=0xF4600000
+FIVRVoltage53=0xF4600000
+```
+
+No ratios, EPP values, thermal offsets or power limits changed with this trial. Keeping Battery
+at -90.82 mV makes this a Performance-only stability arm and preserves the prior fallback.
+
+### Baseline at trial start
+
+- No `Microsoft-Windows-WHEA-Logger` events since the 2026-08-23 BIOS/undervolt change.
+- No `Microsoft-Windows-Kernel-Power` event 41 since 2026-08-18, which predates the change.
+- The 08-25 log was still active and had reached 11,412 samples through 15:50:59.
+
+### Immediate pinned-thread checkpoint, 15:53:31-15:54:01
+
+The same short PowerShell test used in the earlier charger and ratio checks completed after
+the -100.59 mV setting was applied:
+
+| Metric | Result |
+|---|---:|
+| samples | 31 |
+| MULTI average / maximum | 46.23 / 53.31 |
+| package power average / maximum | 46.5 / 57.4 W |
+| temperature average / maximum | 93.3 / 99 C |
+| samples >=95 C / >=100 C | 24 / **0** |
+| VID at MULTI>=46 | n=23, average 1.3317, median 1.3595, maximum 1.4169 V |
+| reason tags | TVB 14, TEMP 1, BDPRO 2 |
+
+There were no immediate WHEA-Logger events or unexpected-shutdown events after the test. This
+is a useful **smoke-test pass**, not stability validation. The test reached high boost and
+heat without crashing, but the offset's likely failure population remains ordinary light-load,
+idle and transition behavior over the next several days.
+
+The two `BDPRO` rows occurred at the end of the burst as multiplier and VID collapsed. They
+represent a brief external/EC throttle assertion, not evidence of an undervolt calculation
+error. Record the count but take no action unless it becomes recurrent during normal use.
+
+### Acceptance criteria for the next several days
+
+1. No new WHEA-Logger hardware errors.
+2. No unexplained restart / Kernel-Power 41.
+3. No application crashes, browser-tab deaths, decompression/compiler errors or other new
+   computation failures.
+4. Ordinary idle/light use and sleep/resume must remain clean; a heavy benchmark alone is not
+   sufficient validation.
+5. Do not change ratios, EPP or power limits during the trial, or attribution is lost.
+
+If any criterion fails, return Performance Core / P Cache / E Cache to **-90.82 mV**. If the
+trial stays clean for several normal-use days, -100.59 mV can be promoted to the daily
+Performance value and then tested separately on the Battery profile. Do not move to -110 mV
+until -100.59 mV has accumulated a clean multi-day record.
